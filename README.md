@@ -49,7 +49,7 @@ The app is designed to be **offline-first** and **local-first**. It does not req
 
 ### Habit Management
 
-Users can:
+Users can: 
 
 - create habits
 - edit habits
