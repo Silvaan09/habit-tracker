@@ -44,7 +44,6 @@ The app started as a simple daily habit checklist and has grown into a more comp
 The app is designed to be **offline-first** and **local-first**. It does not require an account, backend, or cloud sync to work.
 
 ---
-<<<<<<< HEAD
 
 ## Features
 
