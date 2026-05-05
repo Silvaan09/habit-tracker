@@ -959,39 +959,3 @@ Common options:
 ## Author
 
 Built by `Silvan Meier`.
-=======
-
-## Features
-
-### Habit Management
-
-Users can:
-
-- create habits
-- edit habits
-- archive habits
-- choose habit colors
-- choose custom icons or emojis
-- add descriptions
-- configure reminders
-- view detailed habit history
-
-Each habit can have its own visual identity through an icon/emoji and accent color.
-
----
-
-### Flexible Habit Scheduling
-
-Habits are not limited to daily repetition.
-
-Supported schedule types:
-
-#### Daily
-
-The habit appears every day.
-
-Example:
-
-```text
-Read 10 pages
->>>>>>> dbcd6d2319c509d7922316ee21e6dc8b29f66758
