@@ -3,31 +3,48 @@ import React from 'react';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { colors, radius } from '@/src/theme';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textSubtle,
+        tabBarStyle: {
+          position: 'absolute',
+          height: 72,
+          marginHorizontal: 16,
+          marginBottom: 12,
+          borderTopWidth: 0,
+          borderRadius: radius.xl,
+          backgroundColor: colors.surfaceElevated,
+        },
+        tabBarLabelStyle: {
+          fontWeight: '800',
+        },
         headerShown: false,
         tabBarButton: HapticTab,
       }}>
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
+          title: 'Today',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
         }}
       />
       <Tabs.Screen
-        name="explore"
+        name="stats"
         options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          title: 'Stats',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="chart.bar.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="gearshape.fill" color={color} />,
         }}
       />
     </Tabs>
