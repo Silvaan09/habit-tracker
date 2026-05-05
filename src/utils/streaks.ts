@@ -1,22 +1,39 @@
 import { addDays, differenceInCalendarDays, format } from 'date-fns';
 
-export function calculateCurrentStreak(completionDates: string[], today: string): number {
+export function calculateCurrentStreak(
+  completionDates: string[],
+  today: string,
+  ignoredDates: string[] = []
+): number {
   const completedDateSet = createCompletionDateSet(completionDates);
+  const ignoredDateSet = createCompletionDateSet(ignoredDates);
   let cursor = completedDateSet.has(today)
     ? parseDateString(today)
     : addDays(parseDateString(today), -1);
   let streak = 0;
 
+  while (ignoredDateSet.has(formatDateString(cursor))) {
+    cursor = addDays(cursor, -1);
+  }
+
   while (completedDateSet.has(formatDateString(cursor))) {
     streak += 1;
     cursor = addDays(cursor, -1);
+
+    while (ignoredDateSet.has(formatDateString(cursor))) {
+      cursor = addDays(cursor, -1);
+    }
   }
 
   return streak;
 }
 
-export function calculateLongestStreak(completionDates: string[]): number {
+export function calculateLongestStreak(
+  completionDates: string[],
+  ignoredDates: string[] = []
+): number {
   const uniqueDates = getSortedUniqueDates(completionDates);
+  const ignoredDateSet = createCompletionDateSet(ignoredDates);
 
   if (uniqueDates.length === 0) {
     return 0;
@@ -30,7 +47,7 @@ export function calculateLongestStreak(completionDates: string[]): number {
     const currentDate = parseDateString(uniqueDates[index]);
     const dayDifference = differenceInCalendarDays(currentDate, previousDate);
 
-    if (dayDifference === 1) {
+    if (dayDifference === 1 || hasOnlyIgnoredDatesBetween(previousDate, currentDate, ignoredDateSet)) {
       currentStreak += 1;
     } else {
       currentStreak = 1;
@@ -100,4 +117,22 @@ function parseDateString(dateString: string) {
 
 function formatDateString(date: Date) {
   return format(date, 'yyyy-MM-dd');
+}
+
+function hasOnlyIgnoredDatesBetween(
+  previousDate: Date,
+  currentDate: Date,
+  ignoredDateSet: Set<string>
+) {
+  let cursor = addDays(previousDate, 1);
+
+  while (differenceInCalendarDays(currentDate, cursor) > 0) {
+    if (!ignoredDateSet.has(formatDateString(cursor))) {
+      return false;
+    }
+
+    cursor = addDays(cursor, 1);
+  }
+
+  return true;
 }

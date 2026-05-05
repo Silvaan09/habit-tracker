@@ -6,9 +6,12 @@ import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { Screen } from '@/src/components/Screen';
 import { getAllCompletions } from '@/src/db/completions';
 import { initDatabase } from '@/src/db/database';
+import { getAllNumericEntries } from '@/src/db/numericEntries';
 import { resetAllData } from '@/src/db/reset';
 import { getAllHabits } from '@/src/db/habits';
+import { getAllSkips } from '@/src/db/skips';
 import { getAllSettings } from '@/src/db/settings';
+import { getAllSubtaskCompletions, getAllSubtasks } from '@/src/db/subtasks';
 import {
   cancelHabitReminderForHabit,
   getNotificationPermissionStatus,
@@ -64,9 +67,21 @@ export default function SettingsScreen() {
       setMessage(null);
       await initDatabase();
 
-      const [habits, completions, settings] = await Promise.all([
+      const [
+        habits,
+        completions,
+        skips,
+        subtasks,
+        subtaskCompletions,
+        numericEntries,
+        settings,
+      ] = await Promise.all([
         getAllHabits(),
         getAllCompletions(),
+        getAllSkips(),
+        getAllSubtasks(),
+        getAllSubtaskCompletions(),
+        getAllNumericEntries(),
         getAllSettings(),
       ]);
       const exportJson = JSON.stringify(
@@ -74,6 +89,10 @@ export default function SettingsScreen() {
           exportedAt: new Date().toISOString(),
           habits,
           habit_completions: completions,
+          habit_skips: skips,
+          habit_subtasks: subtasks,
+          habit_subtask_completions: subtaskCompletions,
+          habit_numeric_entries: numericEntries,
           settings,
         },
         null,
@@ -96,7 +115,7 @@ export default function SettingsScreen() {
   function confirmResetAllData() {
     Alert.alert(
       'Reset all local data?',
-      'This deletes all habits, completions, and app settings from this device. Historical completions will be removed. This cannot be undone.',
+      'This deletes all habits, completions, skips, and app settings from this device. Historical completions will be removed. This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -191,8 +210,8 @@ export default function SettingsScreen() {
           </View>
         </View>
         <Text style={styles.bodyText}>
-          Your habits and completions stay on this device. Export creates a local JSON snapshot;
-          reset deletes local habit data after confirmation.
+          Your habits, completions, and skips stay on this device. Export creates a local JSON
+          snapshot; reset deletes local habit data after confirmation.
         </Text>
         <View style={styles.actions}>
           <PrimaryButton

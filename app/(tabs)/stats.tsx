@@ -1,36 +1,45 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { addDays, differenceInCalendarDays, format } from 'date-fns';
 import { router } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { ActivityHeatmap, type ActivityHeatmapDay } from '@/src/components/ActivityHeatmap';
 import { EmptyState } from '@/src/components/EmptyState';
 import { HabitIcon } from '@/src/components/HabitIcon';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { Screen } from '@/src/components/Screen';
 import { StatCard } from '@/src/components/StatCard';
 import { WeeklyActivityChart, type WeeklyActivityDay } from '@/src/components/WeeklyActivityChart';
-import { getCompletionsForDate, getCompletionsForHabit } from '@/src/db/completions';
+import { getCompletionsForHabit } from '@/src/db/completions';
 import { initDatabase } from '@/src/db/database';
 import { getActiveHabits } from '@/src/db/habits';
+import { getSkipsForHabit } from '@/src/db/skips';
 import { colors, radius, spacing, typography } from '@/src/theme';
-import type { Habit, HabitCompletion } from '@/src/types/Habit';
+import type { Habit, HabitCompletion, HabitSkip } from '@/src/types/Habit';
 import { getTodayDateString } from '@/src/utils/dates';
-import {
-  calculateCurrentStreak,
-  calculateLongestStreak,
-} from '@/src/utils/streaks';
+import { getScheduledHabitsForDate } from '@/src/utils/schedule';
 
 type HabitWithCompletions = {
   habit: Habit;
   completions: HabitCompletion[];
+  skips: HabitSkip[];
 };
+
+type StatsRange = 'week' | 'month' | 'year';
+
+const RANGE_OPTIONS: { label: string; value: StatsRange }[] = [
+  { label: 'Week', value: 'week' },
+  { label: 'Month', value: 'month' },
+  { label: 'Year', value: 'year' },
+];
 
 export default function StatsScreen() {
   const [habitStats, setHabitStats] = useState<HabitWithCompletions[]>([]);
-  const [todayCompletionCount, setTodayCompletionCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [selectedRange, setSelectedRange] = useState<StatsRange>('week');
+  const chartOpacity = useRef(new Animated.Value(1)).current;
 
   const today = getTodayDateString();
   const loadStats = useCallback(async () => {
@@ -39,23 +48,20 @@ export default function StatsScreen() {
     await initDatabase();
 
     const activeHabits = await getActiveHabits();
-    const [todayCompletions, completionsByHabit] = await Promise.all([
-      getCompletionsForDate(today),
+    const [completionsByHabit, skipsByHabit] = await Promise.all([
       Promise.all(activeHabits.map((habit) => getCompletionsForHabit(habit.id))),
+      Promise.all(activeHabits.map((habit) => getSkipsForHabit(habit.id))),
     ]);
-    const activeHabitIds = new Set(activeHabits.map((habit) => habit.id));
 
-    setTodayCompletionCount(
-      todayCompletions.filter((completion) => activeHabitIds.has(completion.habitId)).length
-    );
     setHabitStats(
       activeHabits.map((habit, index) => ({
         habit,
         completions: completionsByHabit[index],
+        skips: skipsByHabit[index],
       }))
     );
     setLoading(false);
-  }, [today]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -92,44 +98,66 @@ export default function StatsScreen() {
     }
   }
 
+  function selectRange(range: StatsRange) {
+    if (range === selectedRange) {
+      return;
+    }
+
+    Animated.timing(chartOpacity, {
+      duration: 120,
+      toValue: 0,
+      useNativeDriver: true,
+    }).start(() => {
+      setSelectedRange(range);
+      Animated.timing(chartOpacity, {
+        duration: 180,
+        toValue: 1,
+        useNativeDriver: true,
+      }).start();
+    });
+  }
+
   const stats = useMemo(() => {
     let totalCompletions = 0;
-    let totalPossibleHabitDays = 0;
-    let totalCompletedPossibleHabitDays = 0;
-    let bestCurrentStreak = 0;
-    let bestLongestStreak = 0;
+    let totalSkips = 0;
 
     for (const item of habitStats) {
-      const completionDates = item.completions.map((completion) => completion.date);
-      const createdDate = getLocalDateStringFromValue(item.habit.createdAt);
-      const possibleDays = Math.max(getInclusiveDayCount(createdDate, today), 0);
-      const completedPossibleDays = Array.from(new Set(completionDates)).filter(
-        (date) => date >= createdDate && date <= today
-      ).length;
-
       totalCompletions += item.completions.length;
-      totalPossibleHabitDays += possibleDays;
-      totalCompletedPossibleHabitDays += completedPossibleDays;
-      bestCurrentStreak = Math.max(
-        bestCurrentStreak,
-        calculateCurrentStreak(completionDates, today)
-      );
-      bestLongestStreak = Math.max(bestLongestStreak, calculateLongestStreak(completionDates));
+      totalSkips += item.skips.length;
     }
+
+    const completeDayStats = getCompleteDayStreakStats(habitStats, today);
 
     return {
       activeHabitsCount: habitStats.length,
-      bestCurrentStreak,
-      bestLongestStreak,
-      overallCompletionRate:
-        totalPossibleHabitDays === 0
-          ? 0
-          : totalCompletedPossibleHabitDays / totalPossibleHabitDays,
+      currentStreak: completeDayStats.currentStreak,
+      longestStreak: completeDayStats.longestStreak,
       totalCompletions,
+      totalSkips,
     };
   }, [habitStats, today]);
   const weeklyActivity = useMemo(
     () => getWeeklyActivity(habitStats, today),
+    [habitStats, today]
+  );
+  const rangeStartDate = useMemo(
+    () => getRangeStartDate(selectedRange, today),
+    [selectedRange, today]
+  );
+  const rangeActivity = useMemo(
+    () =>
+      selectedRange === 'week'
+        ? weeklyActivity
+        : getActivityForDateRange(habitStats, rangeStartDate, today),
+    [habitStats, rangeStartDate, selectedRange, today, weeklyActivity]
+  );
+  const selectedRangeCompletionRate = useMemo(
+    () => getActivityCompletionRate(rangeActivity),
+    [rangeActivity]
+  );
+  const todayActivity = useMemo(() => getActivityForDate(habitStats, today), [habitStats, today]);
+  const habitBreakdown = useMemo(
+    () => getHabitBreakdownForDateRange(habitStats, getRangeStartDate('week', today), today),
     [habitStats, today]
   );
 
@@ -151,9 +179,9 @@ export default function StatsScreen() {
         </View>
         <View style={styles.headerPill}>
           <Text style={styles.headerPillValue}>
-            {Math.round(stats.overallCompletionRate * 100)}%
+            {Math.round(todayActivity.percentage * 100)}%
           </Text>
-          <Text style={styles.headerPillLabel}>overall</Text>
+          <Text style={styles.headerPillLabel}>Today</Text>
         </View>
       </View>
 
@@ -177,44 +205,70 @@ export default function StatsScreen() {
           <View style={styles.analyticsCard}>
             <View style={styles.analyticsHeader}>
               <View>
-                <Text style={styles.analyticsEyebrow}>Weekly completion</Text>
+                <Text style={styles.analyticsEyebrow}>Activity range</Text>
                 <Text style={styles.analyticsValue}>
-                  {Math.round(stats.overallCompletionRate * 100)}%
+                  {Math.round(selectedRangeCompletionRate * 100)}%
                 </Text>
               </View>
-              <View style={styles.analyticsPill}>
-                <Text style={styles.analyticsPillText}>Last 7 days</Text>
-              </View>
             </View>
-            <WeeklyActivityChart days={weeklyActivity} />
+
+            <View style={styles.rangeSelector}>
+              {RANGE_OPTIONS.map((option) => {
+                const selected = selectedRange === option.value;
+
+                return (
+                  <Pressable
+                    accessibilityLabel={`Show ${option.label} activity`}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    key={option.value}
+                    onPress={() => selectRange(option.value)}
+                    style={({ pressed }) => [
+                      styles.rangeButton,
+                      selected && styles.selectedRangeButton,
+                      pressed && styles.pressed,
+                    ]}>
+                    <Text
+                      style={[styles.rangeButtonText, selected && styles.selectedRangeButtonText]}>
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <Animated.View style={[styles.chartTransition, { opacity: chartOpacity }]}>
+              {selectedRange === 'week' ? (
+                <WeeklyActivityChart days={weeklyActivity} />
+              ) : (
+                <ActivityHeatmap
+                  days={rangeActivity}
+                  endDate={today}
+                  startDate={rangeStartDate}
+                  scrollable={selectedRange === 'year'}
+                />
+              )}
+            </Animated.View>
           </View>
 
           <View style={styles.statsGrid}>
             <StatCard label="Active habits" value={String(stats.activeHabitsCount)} />
-            <StatCard label="Completed today" value={String(todayCompletionCount)} />
             <StatCard label="Total completions" value={String(stats.totalCompletions)} />
+            <StatCard label="Skipped days" value={String(stats.totalSkips)} />
             <StatCard
-              label="Overall completion"
-              value={`${Math.round(stats.overallCompletionRate * 100)}%`}
+              label="Current streak"
+              value={`${stats.currentStreak} day${stats.currentStreak === 1 ? '' : 's'}`}
             />
             <StatCard
-              label="Best current streak"
-              value={`${stats.bestCurrentStreak} day${stats.bestCurrentStreak === 1 ? '' : 's'}`}
-            />
-            <StatCard
-              label="Best longest streak"
-              value={`${stats.bestLongestStreak} day${stats.bestLongestStreak === 1 ? '' : 's'}`}
+              label="Longest streak"
+              value={`${stats.longestStreak} day${stats.longestStreak === 1 ? '' : 's'}`}
             />
           </View>
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Active habits</Text>
             <View style={styles.habitList}>
-              {habitStats.map((item) => {
-                const completionDates = item.completions.map((completion) => completion.date);
-                const currentStreak = calculateCurrentStreak(completionDates, today);
-                const completionRate = getHabitCompletionRate(item, today);
-
+              {habitBreakdown.map((item) => {
                 return (
                   <View key={item.habit.id} style={styles.habitRow}>
                     <HabitIcon
@@ -228,19 +282,22 @@ export default function StatsScreen() {
                     <View style={styles.habitText}>
                       <Text style={styles.habitName}>{item.habit.name}</Text>
                       <Text style={styles.habitMeta}>
-                        {currentStreak} day{currentStreak === 1 ? '' : 's'} current streak
+                        Last 7 days: {item.scheduledCount} scheduled - {item.completedCount} done -{' '}
+                        {item.skippedCount} skipped
                       </Text>
                       <View style={styles.habitProgressTrack}>
                         <View
                           style={[
                             styles.habitProgressFill,
-                            { width: `${Math.round(completionRate * 100)}%` },
+                            { width: `${Math.round(item.completionRate * 100)}%` },
                           ]}
                         />
                       </View>
                     </View>
                     <View style={styles.habitRatePill}>
-                      <Text style={styles.completionCount}>{Math.round(completionRate * 100)}%</Text>
+                      <Text style={styles.completionCount}>
+                        {Math.round(item.completionRate * 100)}%
+                      </Text>
                     </View>
                   </View>
                 );
@@ -251,13 +308,6 @@ export default function StatsScreen() {
       )}
     </Screen>
   );
-}
-
-function getInclusiveDayCount(startDate: string, endDate: string) {
-  const start = parseDateString(startDate);
-  const end = parseDateString(endDate);
-
-  return differenceInCalendarDays(end, start) + 1;
 }
 
 function getLocalDateStringFromValue(value: string) {
@@ -288,33 +338,188 @@ function getWeeklyActivity(
   return Array.from({ length: 7 }, (_, index) => {
     const date = addDays(todayDate, index - 6);
     const dateString = format(date, 'yyyy-MM-dd');
-    const completedCount = habitStats.filter((item) =>
-      item.completions.some((completion) => completion.date === dateString)
-    ).length;
-    const totalCount = habitStats.length;
+    const activity = getActivityForDate(habitStats, dateString);
 
     return {
       date: dateString,
       weekday: format(date, 'EEE'),
-      completedCount,
-      totalCount,
-      percentage: totalCount === 0 ? 0 : completedCount / totalCount,
+      completedCount: activity.completedCount,
+      totalCount: activity.totalCount,
+      percentage: activity.percentage,
     };
   });
 }
 
-function getHabitCompletionRate(item: HabitWithCompletions, today: string) {
-  const createdDate = getLocalDateStringFromValue(item.habit.createdAt);
-  const possibleDays = Math.max(getInclusiveDayCount(createdDate, today), 0);
+function getActivityForDateRange(
+  habitStats: HabitWithCompletions[],
+  startDate: string,
+  endDate: string
+): ActivityHeatmapDay[] {
+  const start = parseDateString(startDate);
+  const totalDays = differenceInCalendarDays(parseDateString(endDate), start) + 1;
 
-  if (possibleDays === 0) {
-    return 0;
+  return Array.from({ length: Math.max(totalDays, 0) }, (_, index) => {
+    const dateString = format(addDays(start, index), 'yyyy-MM-dd');
+
+    return getActivityForDate(habitStats, dateString);
+  });
+}
+
+function getActivityForDate(
+  habitStats: HabitWithCompletions[],
+  dateString: string
+): ActivityHeatmapDay {
+  const eligibleHabitStats = habitStats.filter(
+    (item) => getLocalDateStringFromValue(item.habit.createdAt) <= dateString
+  );
+  const scheduledItems = getScheduledHabitsForDate(
+    eligibleHabitStats.map((item) => item.habit),
+    dateString
+  );
+  const scheduledHabitIds = new Set(scheduledItems.map((habit) => habit.id));
+  const skippedHabitIds = new Set(
+    eligibleHabitStats
+      .filter((item) => scheduledHabitIds.has(item.habit.id))
+      .filter((item) => item.skips.some((skip) => skip.date === dateString))
+      .map((item) => item.habit.id)
+  );
+  const completedCount = eligibleHabitStats.filter(
+    (item) =>
+      scheduledHabitIds.has(item.habit.id) &&
+      !skippedHabitIds.has(item.habit.id) &&
+      item.completions.some((completion) => completion.date === dateString)
+  ).length;
+  const totalCount = Math.max(scheduledItems.length - skippedHabitIds.size, 0);
+
+  return {
+    date: dateString,
+    completedCount,
+    totalCount,
+    percentage: totalCount === 0 ? 0 : completedCount / totalCount,
+  };
+}
+
+function getCompleteDayStreakStats(habitStats: HabitWithCompletions[], today: string) {
+  const firstDate = getFirstHabitDate(habitStats);
+
+  if (!firstDate) {
+    return { currentStreak: 0, longestStreak: 0 };
   }
 
-  const completedDays = Array.from(new Set(item.completions.map((completion) => completion.date)))
-    .filter((date) => date >= createdDate && date <= today).length;
+  const days = getActivityForDateRange(habitStats, firstDate, today);
+  let longestStreak = 0;
+  let runningStreak = 0;
 
-  return Math.min(completedDays / possibleDays, 1);
+  for (const day of days) {
+    if (isCompleteDay(day)) {
+      runningStreak += 1;
+      longestStreak = Math.max(longestStreak, runningStreak);
+    } else {
+      runningStreak = 0;
+    }
+  }
+
+  const todayActivity = days[days.length - 1];
+  let cursor = todayActivity && isCompleteDay(todayActivity) ? days.length - 1 : days.length - 2;
+  let currentStreak = 0;
+
+  // App convention: if today has scheduled habits but is incomplete, the current streak can still
+  // continue from yesterday. Missing yesterday or any earlier scheduled day breaks it.
+  while (cursor >= 0 && isCompleteDay(days[cursor])) {
+    currentStreak += 1;
+    cursor -= 1;
+  }
+
+  return { currentStreak, longestStreak };
+}
+
+function isCompleteDay(day: ActivityHeatmapDay) {
+  return day.totalCount > 0 && day.completedCount === day.totalCount;
+}
+
+function getFirstHabitDate(habitStats: HabitWithCompletions[]) {
+  const dates = habitStats.map((item) => getLocalDateStringFromValue(item.habit.createdAt)).sort();
+
+  return dates[0] ?? null;
+}
+
+function getHabitBreakdownForDateRange(
+  habitStats: HabitWithCompletions[],
+  startDate: string,
+  endDate: string
+) {
+  const start = parseDateString(startDate);
+  const totalDays = differenceInCalendarDays(parseDateString(endDate), start) + 1;
+
+  return habitStats.map((item) => {
+    let completedCount = 0;
+    let scheduledCount = 0;
+    let skippedCount = 0;
+    let trackableCount = 0;
+
+    for (let index = 0; index < totalDays; index += 1) {
+      const dateString = format(addDays(start, index), 'yyyy-MM-dd');
+
+      if (getLocalDateStringFromValue(item.habit.createdAt) > dateString) {
+        continue;
+      }
+
+      const scheduled = getScheduledHabitsForDate([item.habit], dateString).length > 0;
+
+      if (!scheduled) {
+        continue;
+      }
+
+      scheduledCount += 1;
+
+      const skipped = item.skips.some((skip) => skip.date === dateString);
+
+      if (skipped) {
+        skippedCount += 1;
+        continue;
+      }
+
+      trackableCount += 1;
+
+      if (item.completions.some((completion) => completion.date === dateString)) {
+        completedCount += 1;
+      }
+    }
+
+    return {
+      habit: item.habit,
+      completedCount,
+      completionRate: trackableCount === 0 ? 0 : completedCount / trackableCount,
+      scheduledCount,
+      skippedCount,
+    };
+  });
+}
+
+function getActivityCompletionRate(days: ActivityHeatmapDay[]) {
+  const totals = days.reduce(
+    (sum, day) => ({
+      completed: sum.completed + day.completedCount,
+      possible: sum.possible + day.totalCount,
+    }),
+    { completed: 0, possible: 0 }
+  );
+
+  return totals.possible === 0 ? 0 : totals.completed / totals.possible;
+}
+
+function getRangeStartDate(range: StatsRange, today: string) {
+  const todayDate = parseDateString(today);
+
+  if (range === 'year') {
+    return format(addDays(todayDate, -364), 'yyyy-MM-dd');
+  }
+
+  if (range === 'month') {
+    return format(addDays(todayDate, -29), 'yyyy-MM-dd');
+  }
+
+  return format(addDays(todayDate, -6), 'yyyy-MM-dd');
 }
 
 const styles = StyleSheet.create({
@@ -362,7 +567,6 @@ const styles = StyleSheet.create({
   headerPillLabel: {
     color: colors.textMuted,
     ...typography.small,
-    textTransform: 'uppercase',
   },
   analyticsCard: {
     gap: spacing.xl,
@@ -390,6 +594,39 @@ const styles = StyleSheet.create({
     lineHeight: 56,
     fontWeight: '900',
   },
+  rangeSelector: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    padding: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceElevated,
+  },
+  rangeButton: {
+    flex: 1,
+    minHeight: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.pill,
+  },
+  selectedRangeButton: {
+    backgroundColor: colors.primary,
+  },
+  rangeButtonText: {
+    color: colors.textMuted,
+    ...typography.small,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  selectedRangeButtonText: {
+    color: colors.background,
+  },
+  chartTransition: {
+    minHeight: 200,
+    justifyContent: 'center',
+  },
   analyticsPill: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
@@ -400,6 +637,9 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     ...typography.small,
     textTransform: 'uppercase',
+  },
+  pressed: {
+    opacity: 0.78,
   },
   statsGrid: {
     flexDirection: 'row',
@@ -489,3 +729,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+

@@ -2,6 +2,10 @@ import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite';
 
 import {
   CREATE_HABIT_COMPLETIONS_TABLE_SQL,
+  CREATE_HABIT_NUMERIC_ENTRIES_TABLE_SQL,
+  CREATE_HABIT_SKIPS_TABLE_SQL,
+  CREATE_HABIT_SUBTASK_COMPLETIONS_TABLE_SQL,
+  CREATE_HABIT_SUBTASKS_TABLE_SQL,
   CREATE_HABITS_TABLE_SQL,
   CREATE_SETTINGS_TABLE_SQL,
 } from '@/src/db/schema';
@@ -48,6 +52,10 @@ async function setupDatabase() {
   await db.execAsync(CREATE_HABITS_TABLE_SQL);
   await ensureHabitColumns(db);
   await db.execAsync(CREATE_HABIT_COMPLETIONS_TABLE_SQL);
+  await db.execAsync(CREATE_HABIT_SKIPS_TABLE_SQL);
+  await db.execAsync(CREATE_HABIT_SUBTASKS_TABLE_SQL);
+  await db.execAsync(CREATE_HABIT_SUBTASK_COMPLETIONS_TABLE_SQL);
+  await db.execAsync(CREATE_HABIT_NUMERIC_ENTRIES_TABLE_SQL);
   await db.execAsync(CREATE_SETTINGS_TABLE_SQL);
 }
 
@@ -61,6 +69,22 @@ async function ensureHabitColumns(db: SQLiteDatabase) {
     { name: 'icon_value', sql: 'ALTER TABLE habits ADD COLUMN icon_value TEXT;' },
     { name: 'icon_library', sql: 'ALTER TABLE habits ADD COLUMN icon_library TEXT;' },
     { name: 'notification_id', sql: 'ALTER TABLE habits ADD COLUMN notification_id TEXT;' },
+    {
+      name: 'schedule_type',
+      sql: "ALTER TABLE habits ADD COLUMN schedule_type TEXT NOT NULL DEFAULT 'daily';",
+    },
+    { name: 'schedule_weekdays', sql: 'ALTER TABLE habits ADD COLUMN schedule_weekdays TEXT;' },
+    {
+      name: 'schedule_interval_days',
+      sql: 'ALTER TABLE habits ADD COLUMN schedule_interval_days INTEGER;',
+    },
+    { name: 'schedule_start_date', sql: 'ALTER TABLE habits ADD COLUMN schedule_start_date TEXT;' },
+    {
+      name: 'tracking_type',
+      sql: "ALTER TABLE habits ADD COLUMN tracking_type TEXT NOT NULL DEFAULT 'checkbox';",
+    },
+    { name: 'target_value', sql: 'ALTER TABLE habits ADD COLUMN target_value REAL;' },
+    { name: 'target_unit', sql: 'ALTER TABLE habits ADD COLUMN target_unit TEXT;' },
   ];
 
   for (const migration of migrations) {

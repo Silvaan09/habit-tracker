@@ -1,7 +1,8 @@
 import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { EmptyState } from '@/src/components/EmptyState';
 import { HabitHeatmap } from '@/src/components/HabitHeatmap';
@@ -12,41 +13,69 @@ import { StatCard } from '@/src/components/StatCard';
 import { getCompletionsForHabit } from '@/src/db/completions';
 import { initDatabase } from '@/src/db/database';
 import { archiveHabit, getHabitById } from '@/src/db/habits';
+import { getNumericEntryForDate, setNumericEntryForDate } from '@/src/db/numericEntries';
+import { getSkipsForHabit } from '@/src/db/skips';
+import {
+  completeSubtaskForDate,
+  getSubtaskCompletionsForHabitDate,
+  getSubtasksForHabit,
+  uncompleteSubtaskForDate,
+} from '@/src/db/subtasks';
 import { cancelHabitReminderForHabit } from '@/src/notifications/notifications';
 import { colors, radius, spacing, typography } from '@/src/theme';
-import type { Habit, HabitCompletion } from '@/src/types/Habit';
-import { getTodayDateString } from '@/src/utils/dates';
+import type {
+  Habit,
+  HabitCompletion,
+  HabitNumericEntry,
+  HabitSkip,
+  HabitSubtask,
+  HabitSubtaskCompletion,
+} from '@/src/types/Habit';
+import { getTodayDateString, isFutureDate } from '@/src/utils/dates';
+import { calculateScheduleAwareCompletionRate } from '@/src/utils/schedule';
 import {
-  calculateCompletionRate,
   calculateCurrentStreak,
   calculateLongestStreak,
 } from '@/src/utils/streaks';
 
 export default function HabitDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { date, id } = useLocalSearchParams<{ date?: string; id: string }>();
   const habitId = Array.isArray(id) ? id[0] : id;
+  const detailDateParam = Array.isArray(date) ? date[0] : date;
   const [habit, setHabit] = useState<Habit | null>(null);
   const [completions, setCompletions] = useState<HabitCompletion[]>([]);
+  const [skips, setSkips] = useState<HabitSkip[]>([]);
+  const [subtasks, setSubtasks] = useState<HabitSubtask[]>([]);
+  const [subtaskCompletions, setSubtaskCompletions] = useState<HabitSubtaskCompletion[]>([]);
+  const [numericEntry, setNumericEntry] = useState<HabitNumericEntry | null>(null);
+  const [numericValue, setNumericValue] = useState('');
   const [loading, setLoading] = useState(true);
   const [archiving, setArchiving] = useState(false);
+  const [updatingProgress, setUpdatingProgress] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const today = getTodayDateString();
+  const progressDate = isDateString(detailDateParam) ? detailDateParam : today;
+  const progressDateIsFuture = isFutureDate(progressDate, today);
   const completionDates = useMemo(
     () => completions.map((completion) => completion.date),
     [completions]
   );
+  const skippedDates = useMemo(() => skips.map((skip) => skip.date), [skips]);
   const currentStreak = useMemo(
-    () => calculateCurrentStreak(completionDates, today),
-    [completionDates, today]
+    () => calculateCurrentStreak(completionDates, today, skippedDates),
+    [completionDates, skippedDates, today]
   );
   const longestStreak = useMemo(
-    () => calculateLongestStreak(completionDates),
-    [completionDates]
+    () => calculateLongestStreak(completionDates, skippedDates),
+    [completionDates, skippedDates]
   );
   const completionRate = useMemo(
-    () => (habit ? calculateCompletionRate(completionDates, habit.createdAt, today) : 0),
-    [completionDates, habit, today]
+    () =>
+      habit
+        ? calculateScheduleAwareCompletionRate(habit, completionDates, today, skippedDates)
+        : 0,
+    [completionDates, habit, skippedDates, today]
   );
 
   useFocusEffect(
@@ -64,14 +93,30 @@ export default function HabitDetailScreen() {
           setErrorMessage(null);
           await initDatabase();
 
-          const [nextHabit, nextCompletions] = await Promise.all([
+          const [
+            nextHabit,
+            nextCompletions,
+            nextSkips,
+            nextSubtasks,
+            nextSubtaskCompletions,
+            nextNumericEntry,
+          ] = await Promise.all([
             getHabitById(habitId),
             getCompletionsForHabit(habitId),
+            getSkipsForHabit(habitId),
+            getSubtasksForHabit(habitId),
+            getSubtaskCompletionsForHabitDate(habitId, progressDate),
+            getNumericEntryForDate(habitId, progressDate),
           ]);
 
           if (isActive) {
             setHabit(nextHabit && !nextHabit.archived ? nextHabit : null);
             setCompletions(nextHabit?.archived ? [] : nextCompletions);
+            setSkips(nextHabit?.archived ? [] : nextSkips);
+            setSubtasks(nextHabit?.archived ? [] : nextSubtasks);
+            setSubtaskCompletions(nextHabit?.archived ? [] : nextSubtaskCompletions);
+            setNumericEntry(nextHabit?.archived ? null : nextNumericEntry);
+            setNumericValue(nextNumericEntry ? String(nextNumericEntry.value) : '');
           }
         } catch (error) {
           console.error('Failed to load habit detail', error);
@@ -91,7 +136,7 @@ export default function HabitDetailScreen() {
       return () => {
         isActive = false;
       };
-    }, [habitId])
+    }, [habitId, progressDate])
   );
 
   function confirmArchive() {
@@ -123,6 +168,79 @@ export default function HabitDetailScreen() {
       setErrorMessage('Could not archive this habit. Please try again.');
     } finally {
       setArchiving(false);
+    }
+  }
+
+  async function reloadProgress() {
+    if (!habitId || progressDateIsFuture) {
+      return;
+    }
+
+    const [nextCompletions, nextSkips, nextSubtaskCompletions, nextNumericEntry] =
+      await Promise.all([
+        getCompletionsForHabit(habitId),
+        getSkipsForHabit(habitId),
+        getSubtaskCompletionsForHabitDate(habitId, progressDate),
+        getNumericEntryForDate(habitId, progressDate),
+      ]);
+
+    setCompletions(nextCompletions);
+    setSkips(nextSkips);
+    setSubtaskCompletions(nextSubtaskCompletions);
+    setNumericEntry(nextNumericEntry);
+    setNumericValue(nextNumericEntry ? String(nextNumericEntry.value) : numericValue);
+  }
+
+  async function toggleSubtask(subtaskId: string) {
+    if (!habitId) {
+      return;
+    }
+
+    const completedSubtaskIds = new Set(
+      subtaskCompletions.map((completion) => completion.subtaskId)
+    );
+
+    try {
+      setUpdatingProgress(true);
+      setErrorMessage(null);
+
+      if (completedSubtaskIds.has(subtaskId)) {
+        await uncompleteSubtaskForDate(subtaskId, progressDate);
+      } else {
+        await completeSubtaskForDate(subtaskId, habitId, progressDate);
+      }
+
+      await reloadProgress();
+    } catch (error) {
+      console.error('Failed to update subtask progress', error);
+      setErrorMessage('Could not update that subtask. Please try again.');
+    } finally {
+      setUpdatingProgress(false);
+    }
+  }
+
+  async function saveNumericProgress() {
+    if (!habitId) {
+      return;
+    }
+
+    const parsedValue = Number(numericValue.replace(',', '.'));
+
+    if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+      setErrorMessage('Enter a progress value of 0 or more.');
+      return;
+    }
+
+    try {
+      setUpdatingProgress(true);
+      setErrorMessage(null);
+      await setNumericEntryForDate(habitId, progressDate, parsedValue);
+      await reloadProgress();
+    } catch (error) {
+      console.error('Failed to save numeric progress', error);
+      setErrorMessage('Could not save progress. Please try again.');
+    } finally {
+      setUpdatingProgress(false);
     }
   }
 
@@ -190,10 +308,108 @@ export default function HabitDetailScreen() {
         <StatCard label="Completion rate" value={`${Math.round(completionRate * 100)}%`} />
       </View>
 
+      {habit.trackingType === 'subtasks' ? (
+        <View style={styles.progressCard}>
+          <View style={styles.progressHeader}>
+            <View>
+              <Text style={styles.eyebrow}>
+                {progressDate === today ? 'Today' : progressDate} checklist
+              </Text>
+              <Text style={styles.progressTitle}>Subtasks</Text>
+            </View>
+            <Text style={styles.progressPill}>
+              {subtaskCompletions.length}/{subtasks.filter((subtask) => subtask.required).length}
+            </Text>
+          </View>
+
+          {subtasks.length === 0 ? (
+            <Text style={styles.progressText}>No subtasks yet. Add them from Edit Habit.</Text>
+          ) : (
+            <View style={styles.subtaskList}>
+              {progressDateIsFuture ? (
+                <Text style={styles.progressText}>Future days cannot be completed yet.</Text>
+              ) : null}
+              {subtasks.map((subtask) => {
+                const completed = subtaskCompletions.some(
+                  (completion) => completion.subtaskId === subtask.id
+                );
+
+                return (
+                  <Pressable
+                    accessibilityLabel={`${completed ? 'Uncheck' : 'Check'} ${subtask.title}`}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: completed }}
+                    disabled={updatingProgress || progressDateIsFuture}
+                    key={subtask.id}
+                    onPress={() => toggleSubtask(subtask.id)}
+                    style={({ pressed }) => [
+                      styles.subtaskRow,
+                      completed && styles.completedSubtaskRow,
+                      pressed && styles.pressed,
+                      (updatingProgress || progressDateIsFuture) && styles.disabled,
+                    ]}>
+                    <View style={[styles.subtaskCheck, completed && styles.completedSubtaskCheck]}>
+                      {completed ? (
+                        <Ionicons name="checkmark" size={16} color={colors.background} />
+                      ) : null}
+                    </View>
+                    <Text style={styles.subtaskTitle}>{subtask.title}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+        </View>
+      ) : null}
+
+      {habit.trackingType === 'numeric' ? (
+        <View style={styles.progressCard}>
+          <View style={styles.progressHeader}>
+            <View>
+              <Text style={styles.eyebrow}>
+                {progressDate === today ? 'Today' : progressDate} progress
+              </Text>
+              <Text style={styles.progressTitle}>Numeric goal</Text>
+            </View>
+            <Text style={styles.progressPill}>
+              {formatProgressNumber(numericEntry?.value ?? 0)}/
+              {formatProgressNumber(habit.targetValue ?? 0)}
+              {habit.targetUnit ? ` ${habit.targetUnit}` : ''}
+            </Text>
+          </View>
+          <TextInput
+            accessibilityLabel="Numeric progress value"
+            editable={!updatingProgress && !progressDateIsFuture}
+            keyboardType="decimal-pad"
+            onChangeText={(value) => setNumericValue(value.replace(/[^0-9.,]/g, ''))}
+            placeholder="0"
+            placeholderTextColor={colors.textSubtle}
+            style={styles.numericInput}
+            value={numericValue}
+          />
+          <Text style={styles.progressText}>
+            Target: {formatProgressNumber(habit.targetValue ?? 0)}
+            {habit.targetUnit ? ` ${habit.targetUnit}` : ''}. Reaching the target completes the
+            habit for this date.
+          </Text>
+          {progressDateIsFuture ? (
+            <Text style={styles.progressText}>Future days cannot be completed yet.</Text>
+          ) : null}
+          <PrimaryButton
+            disabled={updatingProgress || progressDateIsFuture}
+            onPress={saveNumericProgress}
+            title={updatingProgress ? 'Saving...' : 'Save Progress'}
+          />
+        </View>
+      ) : null}
+
       <HabitHeatmap
         color={habit.color ?? colors.primary}
         completionDates={completionDates}
+        skippedDates={skippedDates}
+        subtitle={habit.description}
         today={today}
+        title={habit.name}
       />
 
       <View style={styles.actions}>
@@ -210,6 +426,14 @@ export default function HabitDetailScreen() {
       </View>
     </Screen>
   );
+}
+
+function formatProgressNumber(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function isDateString(value: string | undefined) {
+  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
 }
 
 const styles = StyleSheet.create({
@@ -275,6 +499,86 @@ const styles = StyleSheet.create({
   },
   actions: {
     gap: 10,
+  },
+  progressCard: {
+    gap: spacing.lg,
+    padding: spacing.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
+    backgroundColor: colors.surface,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  progressTitle: {
+    color: colors.text,
+    ...typography.heading,
+  },
+  progressPill: {
+    color: colors.primary,
+    ...typography.caption,
+    fontWeight: '900',
+  },
+  progressText: {
+    color: colors.textMuted,
+    ...typography.caption,
+  },
+  subtaskList: {
+    gap: spacing.sm,
+  },
+  subtaskRow: {
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceElevated,
+  },
+  completedSubtaskRow: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryMuted,
+  },
+  subtaskCheck: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.surfaceMuted,
+    borderRadius: radius.pill,
+  },
+  completedSubtaskCheck: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  subtaskTitle: {
+    flex: 1,
+    color: colors.text,
+    ...typography.body,
+    fontWeight: '800',
+  },
+  numericInput: {
+    minHeight: 58,
+    paddingHorizontal: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    color: colors.text,
+    backgroundColor: colors.surfaceElevated,
+    ...typography.body,
+  },
+  pressed: {
+    opacity: 0.78,
+  },
+  disabled: {
+    opacity: 0.42,
   },
   errorBanner: {
     padding: spacing.lg,

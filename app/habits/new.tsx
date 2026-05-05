@@ -5,6 +5,7 @@ import { Alert, StyleSheet, Text, View } from 'react-native';
 import { HabitForm, type HabitFormValues } from '@/src/components/HabitForm';
 import { Screen } from '@/src/components/Screen';
 import { createHabit, updateHabitNotificationId } from '@/src/db/habits';
+import { createSubtask } from '@/src/db/subtasks';
 import { rescheduleHabitReminderForHabit } from '@/src/notifications/notifications';
 import { colors, radius, spacing, typography } from '@/src/theme';
 
@@ -17,6 +18,12 @@ export default function NewHabitScreen() {
       setSaving(true);
       setErrorMessage(null);
       const habit = await createHabit(values);
+
+      if (values.trackingType === 'subtasks') {
+        await Promise.all(
+          values.subtaskTitles.map((title, index) => createSubtask(habit.id, title, index))
+        );
+      }
 
       if (habit.reminderEnabled) {
         const notificationId = await rescheduleHabitReminderForHabit(habit);

@@ -10,16 +10,23 @@ import { Screen } from '@/src/components/Screen';
 import { initDatabase } from '@/src/db/database';
 import { getHabitById, updateHabit, updateHabitNotificationId } from '@/src/db/habits';
 import {
+  archiveSubtask,
+  createSubtask,
+  getSubtasksForHabit,
+  updateSubtask,
+} from '@/src/db/subtasks';
+import {
   cancelHabitReminderForHabit,
   rescheduleHabitReminderForHabit,
 } from '@/src/notifications/notifications';
 import { colors, radius, spacing, typography } from '@/src/theme';
-import type { Habit } from '@/src/types/Habit';
+import type { Habit, HabitSubtask } from '@/src/types/Habit';
 
 export default function EditHabitScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const habitId = Array.isArray(id) ? id[0] : id;
   const [habit, setHabit] = useState<Habit | null>(null);
+  const [subtasks, setSubtasks] = useState<HabitSubtask[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -38,10 +45,14 @@ export default function EditHabitScreen() {
           setLoading(true);
           setErrorMessage(null);
           await initDatabase();
-          const nextHabit = await getHabitById(habitId);
+          const [nextHabit, nextSubtasks] = await Promise.all([
+            getHabitById(habitId),
+            getSubtasksForHabit(habitId),
+          ]);
 
           if (isActive) {
             setHabit(nextHabit && !nextHabit.archived ? nextHabit : null);
+            setSubtasks(nextHabit?.archived ? [] : nextSubtasks);
           }
         } catch (error) {
           console.error('Failed to load habit for editing', error);
@@ -73,6 +84,7 @@ export default function EditHabitScreen() {
       setSaving(true);
       setErrorMessage(null);
       await updateHabit(habitId, values);
+      await syncSubtasksForHabit(habitId, subtasks, values);
       const updatedHabit = await getHabitById(habitId);
 
       if (!updatedHabit) {
@@ -134,7 +146,13 @@ export default function EditHabitScreen() {
 
       <HabitForm
         error={errorMessage}
-        initialValues={habit}
+        initialValues={{
+          ...habit,
+          subtaskTitles:
+            habit.trackingType === 'subtasks'
+              ? subtasks.map((subtask) => subtask.title)
+              : undefined,
+        }}
         onCancel={() => router.back()}
         onSubmit={handleSubmit}
         saving={saving}
@@ -142,6 +160,33 @@ export default function EditHabitScreen() {
       />
     </Screen>
   );
+}
+
+async function syncSubtasksForHabit(
+  habitId: string,
+  existingSubtasks: HabitSubtask[],
+  values: HabitFormValues
+) {
+  if (values.trackingType !== 'subtasks') {
+    await Promise.all(existingSubtasks.map((subtask) => archiveSubtask(subtask.id)));
+    return;
+  }
+
+  const titles = values.subtaskTitles;
+  const updates = titles.map((title, index) => {
+    const existingSubtask = existingSubtasks[index];
+
+    if (existingSubtask) {
+      return updateSubtask(existingSubtask.id, { title, position: index, required: true });
+    }
+
+    return createSubtask(habitId, title, index);
+  });
+  const archives = existingSubtasks
+    .slice(titles.length)
+    .map((subtask) => archiveSubtask(subtask.id));
+
+  await Promise.all([...updates, ...archives]);
 }
 
 function shouldCancelReminder(previousHabit: Habit, values: HabitFormValues) {

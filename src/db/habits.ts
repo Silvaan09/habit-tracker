@@ -1,5 +1,11 @@
 import { createLocalId, getDatabase } from '@/src/db/database';
-import type { Habit, HabitIconType } from '@/src/types/Habit';
+import type {
+  Habit,
+  HabitIconType,
+  HabitScheduleType,
+  HabitTrackingType,
+} from '@/src/types/Habit';
+import { getTodayDateString } from '@/src/utils/dates';
 
 type HabitRow = {
   id: string;
@@ -13,6 +19,13 @@ type HabitRow = {
   reminder_enabled: number;
   reminder_time: string | null;
   notification_id: string | null;
+  schedule_type: string | null;
+  schedule_weekdays: string | null;
+  schedule_interval_days: number | null;
+  schedule_start_date: string | null;
+  tracking_type: string | null;
+  target_value: number | null;
+  target_unit: string | null;
   archived: number;
   created_at: string;
   updated_at: string;
@@ -29,6 +42,13 @@ export type CreateHabitInput = {
   reminderEnabled?: boolean;
   reminderTime?: string | null;
   notificationId?: string | null;
+  scheduleType?: HabitScheduleType;
+  scheduleWeekdays?: number[] | null;
+  scheduleIntervalDays?: number | null;
+  scheduleStartDate?: string | null;
+  trackingType?: HabitTrackingType;
+  targetValue?: number | null;
+  targetUnit?: string | null;
 };
 
 export type UpdateHabitInput = Partial<CreateHabitInput>;
@@ -54,6 +74,13 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
     reminderEnabled: input.reminderEnabled ?? false,
     reminderTime: input.reminderTime ?? null,
     notificationId: input.notificationId ?? null,
+    scheduleType: input.scheduleType ?? 'daily',
+    scheduleWeekdays: normalizeScheduleWeekdays(input.scheduleWeekdays),
+    scheduleIntervalDays: normalizeScheduleIntervalDays(input.scheduleIntervalDays),
+    scheduleStartDate: input.scheduleStartDate ?? getTodayDateString(),
+    trackingType: input.trackingType ?? 'checkbox',
+    targetValue: normalizeTargetValue(input.targetValue),
+    targetUnit: input.targetUnit?.trim() || null,
     archived: false,
     createdAt: now,
     updatedAt: now,
@@ -72,10 +99,17 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
       reminder_enabled,
       reminder_time,
       notification_id,
+      schedule_type,
+      schedule_weekdays,
+      schedule_interval_days,
+      schedule_start_date,
+      tracking_type,
+      target_value,
+      target_unit,
       archived,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       habit.id,
       habit.name,
@@ -88,6 +122,13 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
       habit.reminderEnabled ? 1 : 0,
       habit.reminderTime,
       habit.notificationId,
+      habit.scheduleType,
+      serializeScheduleWeekdays(habit.scheduleWeekdays),
+      habit.scheduleIntervalDays,
+      habit.scheduleStartDate,
+      habit.trackingType,
+      habit.targetValue,
+      habit.targetUnit,
       habit.archived ? 1 : 0,
       habit.createdAt,
       habit.updatedAt,
@@ -112,6 +153,13 @@ export async function getActiveHabits(): Promise<Habit[]> {
       reminder_enabled,
       reminder_time,
       notification_id,
+      schedule_type,
+      schedule_weekdays,
+      schedule_interval_days,
+      schedule_start_date,
+      tracking_type,
+      target_value,
+      target_unit,
       archived,
       created_at,
       updated_at
@@ -138,6 +186,13 @@ export async function getAllHabits(): Promise<Habit[]> {
       reminder_enabled,
       reminder_time,
       notification_id,
+      schedule_type,
+      schedule_weekdays,
+      schedule_interval_days,
+      schedule_start_date,
+      tracking_type,
+      target_value,
+      target_unit,
       archived,
       created_at,
       updated_at
@@ -163,6 +218,13 @@ export async function getHabitById(id: string): Promise<Habit | null> {
       reminder_enabled,
       reminder_time,
       notification_id,
+      schedule_type,
+      schedule_weekdays,
+      schedule_interval_days,
+      schedule_start_date,
+      tracking_type,
+      target_value,
+      target_unit,
       archived,
       created_at,
       updated_at
@@ -236,6 +298,41 @@ export async function updateHabit(id: string, input: UpdateHabitInput): Promise<
     params.push(input.notificationId);
   }
 
+  if (input.scheduleType !== undefined) {
+    updates.push('schedule_type = ?');
+    params.push(input.scheduleType);
+  }
+
+  if (input.scheduleWeekdays !== undefined) {
+    updates.push('schedule_weekdays = ?');
+    params.push(serializeScheduleWeekdays(normalizeScheduleWeekdays(input.scheduleWeekdays)));
+  }
+
+  if (input.scheduleIntervalDays !== undefined) {
+    updates.push('schedule_interval_days = ?');
+    params.push(normalizeScheduleIntervalDays(input.scheduleIntervalDays));
+  }
+
+  if (input.scheduleStartDate !== undefined) {
+    updates.push('schedule_start_date = ?');
+    params.push(input.scheduleStartDate);
+  }
+
+  if (input.trackingType !== undefined) {
+    updates.push('tracking_type = ?');
+    params.push(input.trackingType);
+  }
+
+  if (input.targetValue !== undefined) {
+    updates.push('target_value = ?');
+    params.push(normalizeTargetValue(input.targetValue));
+  }
+
+  if (input.targetUnit !== undefined) {
+    updates.push('target_unit = ?');
+    params.push(input.targetUnit?.trim() || null);
+  }
+
   updates.push('updated_at = ?');
   params.push(new Date().toISOString(), id);
 
@@ -285,10 +382,63 @@ function mapHabitRow(row: HabitRow): Habit {
     reminderEnabled: Boolean(row.reminder_enabled),
     reminderTime: row.reminder_time,
     notificationId: row.notification_id,
+    scheduleType: normalizeScheduleType(row.schedule_type),
+    scheduleWeekdays: parseScheduleWeekdays(row.schedule_weekdays),
+    scheduleIntervalDays: normalizeScheduleIntervalDays(row.schedule_interval_days),
+    scheduleStartDate: row.schedule_start_date,
+    trackingType: normalizeTrackingType(row.tracking_type),
+    targetValue: normalizeTargetValue(row.target_value),
+    targetUnit: row.target_unit,
     archived: Boolean(row.archived),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function normalizeScheduleType(scheduleType: string | null): HabitScheduleType {
+  if (scheduleType === 'weekdays' || scheduleType === 'interval') {
+    return scheduleType;
+  }
+
+  return 'daily';
+}
+
+function normalizeScheduleWeekdays(weekdays: number[] | null | undefined) {
+  if (!weekdays) {
+    return null;
+  }
+
+  const normalizedWeekdays = Array.from(new Set(weekdays))
+    .filter((weekday) => Number.isInteger(weekday) && weekday >= 1 && weekday <= 7)
+    .sort((a, b) => a - b);
+
+  return normalizedWeekdays.length > 0 ? normalizedWeekdays : null;
+}
+
+function serializeScheduleWeekdays(weekdays: number[] | null) {
+  return weekdays ? JSON.stringify(weekdays) : null;
+}
+
+function parseScheduleWeekdays(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsedValue = JSON.parse(value);
+
+    return Array.isArray(parsedValue) ? normalizeScheduleWeekdays(parsedValue) : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeScheduleIntervalDays(intervalDays: number | null | undefined) {
+  if (!Number.isInteger(intervalDays) || !intervalDays || intervalDays < 1) {
+    return null;
+  }
+
+  return intervalDays;
 }
 
 function normalizeHabitIconType(iconType: string | null): HabitIconType | null {
@@ -297,4 +447,20 @@ function normalizeHabitIconType(iconType: string | null): HabitIconType | null {
   }
 
   return null;
+}
+
+function normalizeTrackingType(trackingType: string | null): HabitTrackingType {
+  if (trackingType === 'subtasks' || trackingType === 'numeric') {
+    return trackingType;
+  }
+
+  return 'checkbox';
+}
+
+function normalizeTargetValue(targetValue: number | null | undefined) {
+  if (typeof targetValue !== 'number' || !Number.isFinite(targetValue) || targetValue <= 0) {
+    return null;
+  }
+
+  return targetValue;
 }

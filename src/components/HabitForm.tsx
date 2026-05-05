@@ -9,7 +9,8 @@ import {
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { TextInputField } from '@/src/components/TextInputField';
 import { colors, radius, spacing, typography } from '@/src/theme';
-import type { HabitIconType } from '@/src/types/Habit';
+import type { HabitIconType, HabitScheduleType, HabitTrackingType } from '@/src/types/Habit';
+import { getTodayDateString } from '@/src/utils/dates';
 import { isValidReminderTime, REMINDER_TIME_VALIDATION_MESSAGE } from '@/src/utils/reminders';
 
 export type HabitFormValues = {
@@ -22,6 +23,14 @@ export type HabitFormValues = {
   color: string | null;
   reminderEnabled: boolean;
   reminderTime: string | null;
+  scheduleType: HabitScheduleType;
+  scheduleWeekdays: number[] | null;
+  scheduleIntervalDays: number | null;
+  scheduleStartDate: string | null;
+  trackingType: HabitTrackingType;
+  targetValue: number | null;
+  targetUnit: string | null;
+  subtaskTitles: string[];
 };
 
 type HabitFormProps = {
@@ -40,6 +49,15 @@ const COLOR_OPTIONS = [
   colors.habitOrange,
   colors.habitGreen,
   colors.primary,
+];
+const WEEKDAY_OPTIONS = [
+  { label: 'Mon', value: 1 },
+  { label: 'Tue', value: 2 },
+  { label: 'Wed', value: 3 },
+  { label: 'Thu', value: 4 },
+  { label: 'Fri', value: 5 },
+  { label: 'Sat', value: 6 },
+  { label: 'Sun', value: 7 },
 ];
 
 export function HabitForm({
@@ -61,10 +79,34 @@ export function HabitForm({
   const [color, setColor] = useState(initialValues?.color ?? COLOR_OPTIONS[0]);
   const [reminderEnabled, setReminderEnabled] = useState(initialValues?.reminderEnabled ?? false);
   const [reminderTime, setReminderTime] = useState(initialValues?.reminderTime ?? '');
+  const [scheduleType, setScheduleType] = useState<HabitScheduleType>(
+    initialValues?.scheduleType ?? 'daily'
+  );
+  const [scheduleWeekdays, setScheduleWeekdays] = useState<number[]>(
+    initialValues?.scheduleWeekdays ?? [1, 2, 3, 4, 5]
+  );
+  const [scheduleIntervalDays, setScheduleIntervalDays] = useState(
+    String(initialValues?.scheduleIntervalDays ?? 3)
+  );
+  const [scheduleStartDate, setScheduleStartDate] = useState(
+    initialValues?.scheduleStartDate ?? getTodayDateString()
+  );
+  const [trackingType, setTrackingType] = useState<HabitTrackingType>(
+    initialValues?.trackingType ?? 'checkbox'
+  );
+  const [subtaskTitles, setSubtaskTitles] = useState<string[]>(
+    initialValues?.subtaskTitles?.length ? initialValues.subtaskTitles : ['', '', '']
+  );
+  const [targetValue, setTargetValue] = useState(
+    initialValues?.targetValue ? String(initialValues.targetValue) : ''
+  );
+  const [targetUnit, setTargetUnit] = useState(initialValues?.targetUnit ?? '');
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
   const [reminderTimeValidationMessage, setReminderTimeValidationMessage] = useState<string | null>(
     null
   );
+  const [scheduleValidationMessage, setScheduleValidationMessage] = useState<string | null>(null);
+  const [trackingValidationMessage, setTrackingValidationMessage] = useState<string | null>(null);
 
   function handleSubmit() {
     const trimmedName = name.trim();
@@ -81,8 +123,40 @@ export function HabitForm({
       return;
     }
 
+    const parsedIntervalDays = Number(scheduleIntervalDays);
+
+    if (scheduleType === 'weekdays' && scheduleWeekdays.length === 0) {
+      setScheduleValidationMessage('Choose at least one weekday.');
+      return;
+    }
+
+    if (scheduleType === 'interval' && (!Number.isInteger(parsedIntervalDays) || parsedIntervalDays < 1)) {
+      setScheduleValidationMessage('Interval must be a positive whole number.');
+      return;
+    }
+
+    if (scheduleType === 'interval' && !isDateString(scheduleStartDate)) {
+      setScheduleValidationMessage('Use a start date like 2026-05-05.');
+      return;
+    }
+
+    const trimmedSubtaskTitles = subtaskTitles.map((title) => title.trim()).filter(Boolean);
+    const parsedTargetValue = Number(targetValue.replace(',', '.'));
+
+    if (trackingType === 'subtasks' && trimmedSubtaskTitles.length === 0) {
+      setTrackingValidationMessage('Add at least one subtask.');
+      return;
+    }
+
+    if (trackingType === 'numeric' && (!Number.isFinite(parsedTargetValue) || parsedTargetValue <= 0)) {
+      setTrackingValidationMessage('Target must be greater than 0.');
+      return;
+    }
+
     setValidationMessage(null);
     setReminderTimeValidationMessage(null);
+    setScheduleValidationMessage(null);
+    setTrackingValidationMessage(null);
     onSubmit({
       name: trimmedName,
       description: description.trim() || null,
@@ -93,6 +167,14 @@ export function HabitForm({
       color,
       reminderEnabled,
       reminderTime: reminderEnabled ? trimmedReminderTime : null,
+      scheduleType,
+      scheduleWeekdays: scheduleType === 'weekdays' ? scheduleWeekdays : null,
+      scheduleIntervalDays: scheduleType === 'interval' ? parsedIntervalDays : null,
+      scheduleStartDate: scheduleType === 'interval' ? scheduleStartDate : null,
+      trackingType,
+      targetValue: trackingType === 'numeric' ? parsedTargetValue : null,
+      targetUnit: trackingType === 'numeric' ? targetUnit.trim() || null : null,
+      subtaskTitles: trackingType === 'subtasks' ? trimmedSubtaskTitles : [],
     });
   }
 
@@ -104,9 +186,47 @@ export function HabitForm({
     setReminderEnabled((current) => !current);
   }
 
+  function updateSubtaskTitle(index: number, value: string) {
+    setSubtaskTitles((current) =>
+      current.map((title, titleIndex) => (titleIndex === index ? value : title))
+    );
+    setTrackingValidationMessage(null);
+  }
+
+  function addSubtaskTitle() {
+    setSubtaskTitles((current) => [...current, '']);
+  }
+
+  function removeSubtaskTitle(index: number) {
+    setSubtaskTitles((current) => current.filter((_, titleIndex) => titleIndex !== index));
+    setTrackingValidationMessage(null);
+  }
+
+  function moveSubtaskTitle(index: number, direction: -1 | 1) {
+    setSubtaskTitles((current) => {
+      const nextIndex = index + direction;
+
+      if (nextIndex < 0 || nextIndex >= current.length) {
+        return current;
+      }
+
+      const next = [...current];
+      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+
+      return next;
+    });
+  }
+
   const previewName = name.trim() || 'Habit name';
   const previewDescription = description.trim();
   const hasReminderPreview = reminderEnabled && reminderTime.trim().length > 0;
+  const schedulePreview = getSchedulePreview(
+    scheduleType,
+    scheduleWeekdays,
+    scheduleIntervalDays,
+    scheduleStartDate
+  );
+  const trackingPreview = getTrackingPreview(trackingType, subtaskTitles, targetValue, targetUnit);
 
   return (
     <View style={styles.form}>
@@ -202,6 +322,253 @@ export function HabitForm({
 
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
+          <Text style={styles.sectionEyebrow}>Tracking</Text>
+          <Text style={styles.sectionTitle}>Choose how progress is measured.</Text>
+        </View>
+
+        <View style={styles.trackingTypeGrid}>
+          {(['checkbox', 'subtasks', 'numeric'] as const).map((type) => (
+            <Pressable
+              accessibilityLabel={`Set tracking to ${getTrackingTypeLabel(type)}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: trackingType === type }}
+              disabled={saving}
+              key={type}
+              onPress={() => {
+                setTrackingType(type);
+                setTrackingValidationMessage(null);
+              }}
+              style={({ pressed }) => [
+                styles.trackingTypeButton,
+                trackingType === type && styles.selectedTrackingTypeButton,
+                pressed && styles.pressed,
+                saving && styles.disabled,
+              ]}>
+              <Text
+                style={[
+                  styles.trackingTypeTitle,
+                  trackingType === type && styles.selectedTrackingTypeText,
+                ]}>
+                {getTrackingTypeLabel(type)}
+              </Text>
+              <Text
+                style={[
+                  styles.trackingTypeMeta,
+                  trackingType === type && styles.selectedTrackingTypeMeta,
+                ]}>
+                {getTrackingTypeDescription(type)}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        {trackingType === 'subtasks' ? (
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Subtasks</Text>
+            <Text style={styles.helperText}>All active subtasks must be checked to complete it.</Text>
+            <View style={styles.subtaskList}>
+              {subtaskTitles.map((subtaskTitle, index) => (
+                <View key={`${index}-${subtaskTitles.length}`} style={styles.subtaskEditorRow}>
+                  <View style={styles.subtaskInputWrap}>
+                    <TextInputField
+                      editable={!saving}
+                      label={`Item ${index + 1}`}
+                      onChangeText={(value) => updateSubtaskTitle(index, value)}
+                      placeholder="Vitamin D"
+                      value={subtaskTitle}
+                    />
+                  </View>
+                  <View style={styles.subtaskActions}>
+                    <Pressable
+                      accessibilityLabel={`Move item ${index + 1} up`}
+                      accessibilityRole="button"
+                      disabled={saving || index === 0}
+                      onPress={() => moveSubtaskTitle(index, -1)}
+                      style={[styles.subtaskActionButton, (saving || index === 0) && styles.disabled]}>
+                      <Text style={styles.subtaskActionText}>Up</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityLabel={`Move item ${index + 1} down`}
+                      accessibilityRole="button"
+                      disabled={saving || index === subtaskTitles.length - 1}
+                      onPress={() => moveSubtaskTitle(index, 1)}
+                      style={[
+                        styles.subtaskActionButton,
+                        (saving || index === subtaskTitles.length - 1) && styles.disabled,
+                      ]}>
+                      <Text style={styles.subtaskActionText}>Down</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityLabel={`Remove item ${index + 1}`}
+                      accessibilityRole="button"
+                      disabled={saving || subtaskTitles.length === 1}
+                      onPress={() => removeSubtaskTitle(index)}
+                      style={[
+                        styles.subtaskActionButton,
+                        styles.subtaskRemoveButton,
+                        (saving || subtaskTitles.length === 1) && styles.disabled,
+                      ]}>
+                      <Text style={styles.subtaskRemoveText}>Remove</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+            </View>
+            <PrimaryButton
+              disabled={saving}
+              onPress={addSubtaskTitle}
+              title="Add subtask"
+              variant="secondary"
+            />
+          </View>
+        ) : null}
+
+        {trackingType === 'numeric' ? (
+          <View style={styles.intervalFields}>
+            <TextInputField
+              editable={!saving}
+              keyboardType="decimal-pad"
+              label="Target value"
+              onChangeText={(value) => {
+                setTargetValue(value.replace(/[^0-9.,]/g, ''));
+                setTrackingValidationMessage(null);
+              }}
+              placeholder="20"
+              value={targetValue}
+            />
+            <TextInputField
+              editable={!saving}
+              helper="Optional. Examples: pages, liters, minutes."
+              label="Unit"
+              onChangeText={setTargetUnit}
+              placeholder="pages"
+              value={targetUnit}
+            />
+          </View>
+        ) : null}
+
+        {trackingValidationMessage ? (
+          <Text style={styles.scheduleError}>{trackingValidationMessage}</Text>
+        ) : null}
+      </View>
+
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionEyebrow}>Schedule</Text>
+          <Text style={styles.sectionTitle}>Choose when it appears.</Text>
+        </View>
+
+        <View style={styles.scheduleTypeGrid}>
+          {(['daily', 'weekdays', 'interval'] as const).map((type) => (
+            <Pressable
+              accessibilityLabel={`Set schedule to ${getScheduleTypeLabel(type)}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: scheduleType === type }}
+              disabled={saving}
+              key={type}
+              onPress={() => {
+                setScheduleType(type);
+                setScheduleValidationMessage(null);
+              }}
+              style={({ pressed }) => [
+                styles.scheduleTypeButton,
+                scheduleType === type && styles.selectedScheduleTypeButton,
+                pressed && styles.pressed,
+                saving && styles.disabled,
+              ]}>
+              <Text
+                style={[
+                  styles.scheduleTypeTitle,
+                  scheduleType === type && styles.selectedScheduleTypeText,
+                ]}>
+                {getScheduleTypeLabel(type)}
+              </Text>
+              <Text
+                style={[
+                  styles.scheduleTypeMeta,
+                  scheduleType === type && styles.selectedScheduleTypeMeta,
+                ]}>
+                {getScheduleTypeDescription(type)}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        {scheduleType === 'weekdays' ? (
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Weekdays</Text>
+            <View style={styles.weekdayChips}>
+              {WEEKDAY_OPTIONS.map((weekday) => {
+                const selected = scheduleWeekdays.includes(weekday.value);
+
+                return (
+                  <Pressable
+                    accessibilityLabel={`${selected ? 'Remove' : 'Add'} ${weekday.label}`}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    disabled={saving}
+                    key={weekday.value}
+                    onPress={() => {
+                      setScheduleWeekdays((current) =>
+                        selected
+                          ? current.filter((value) => value !== weekday.value)
+                          : [...current, weekday.value].sort((a, b) => a - b)
+                      );
+                      setScheduleValidationMessage(null);
+                    }}
+                    style={[
+                      styles.weekdayChip,
+                      selected && styles.selectedWeekdayChip,
+                      saving && styles.disabled,
+                    ]}>
+                    <Text
+                      style={[
+                        styles.weekdayChipText,
+                        selected && styles.selectedWeekdayChipText,
+                      ]}>
+                      {weekday.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        ) : null}
+
+        {scheduleType === 'interval' ? (
+          <View style={styles.intervalFields}>
+            <TextInputField
+              editable={!saving}
+              keyboardType="number-pad"
+              label="Every X days"
+              onChangeText={(value) => {
+                setScheduleIntervalDays(value.replace(/[^0-9]/g, ''));
+                setScheduleValidationMessage(null);
+              }}
+              placeholder="3"
+              value={scheduleIntervalDays}
+            />
+            <TextInputField
+              editable={!saving}
+              helper="This habit appears every X days starting from this date."
+              label="Start date"
+              onChangeText={(value) => {
+                setScheduleStartDate(value);
+                setScheduleValidationMessage(null);
+              }}
+              placeholder="2026-05-05"
+              value={scheduleStartDate}
+            />
+          </View>
+        ) : null}
+
+        {scheduleValidationMessage ? (
+          <Text style={styles.scheduleError}>{scheduleValidationMessage}</Text>
+        ) : null}
+      </View>
+
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
           <Text style={styles.sectionEyebrow}>Reminder</Text>
           <Text style={styles.sectionTitle}>A gentle daily nudge.</Text>
         </View>
@@ -274,7 +641,9 @@ export function HabitForm({
               </Text>
             ) : null}
             <Text style={styles.previewMeta}>
-              {hasReminderPreview ? `Daily reminder at ${reminderTime.trim()}` : 'Daily habit'}
+              {schedulePreview}
+              {` - ${trackingPreview}`}
+              {hasReminderPreview ? ` - reminder at ${reminderTime.trim()}` : ''}
             </Text>
           </View>
         </View>
@@ -298,6 +667,98 @@ export function HabitForm({
       />
     </View>
   );
+}
+
+function getScheduleTypeLabel(scheduleType: HabitScheduleType) {
+  if (scheduleType === 'weekdays') {
+    return 'Weekdays';
+  }
+
+  if (scheduleType === 'interval') {
+    return 'Every X days';
+  }
+
+  return 'Daily';
+}
+
+function getScheduleTypeDescription(scheduleType: HabitScheduleType) {
+  if (scheduleType === 'weekdays') {
+    return 'Pick days';
+  }
+
+  if (scheduleType === 'interval') {
+    return 'Custom rhythm';
+  }
+
+  return 'Every day';
+}
+
+function getTrackingTypeLabel(trackingType: HabitTrackingType) {
+  if (trackingType === 'subtasks') {
+    return 'Subtasks';
+  }
+
+  if (trackingType === 'numeric') {
+    return 'Numeric goal';
+  }
+
+  return 'Checkbox';
+}
+
+function getTrackingTypeDescription(trackingType: HabitTrackingType) {
+  if (trackingType === 'subtasks') {
+    return 'Checklist';
+  }
+
+  if (trackingType === 'numeric') {
+    return 'Target amount';
+  }
+
+  return 'One tap';
+}
+
+function getTrackingPreview(
+  trackingType: HabitTrackingType,
+  subtaskTitles: string[],
+  targetValue: string,
+  targetUnit: string
+) {
+  if (trackingType === 'subtasks') {
+    const count = subtaskTitles.map((title) => title.trim()).filter(Boolean).length;
+
+    return `${count || 0} subtask${count === 1 ? '' : 's'}`;
+  }
+
+  if (trackingType === 'numeric') {
+    return `Target ${targetValue || '0'}${targetUnit.trim() ? ` ${targetUnit.trim()}` : ''}`;
+  }
+
+  return 'Checkbox habit';
+}
+
+function getSchedulePreview(
+  scheduleType: HabitScheduleType,
+  weekdays: number[],
+  intervalDays: string,
+  startDate: string
+) {
+  if (scheduleType === 'weekdays') {
+    const labels = WEEKDAY_OPTIONS.filter((weekday) => weekdays.includes(weekday.value))
+      .map((weekday) => weekday.label)
+      .join(', ');
+
+    return labels || 'No weekdays selected';
+  }
+
+  if (scheduleType === 'interval') {
+    return `Every ${intervalDays || 'X'} day${intervalDays === '1' ? '' : 's'} from ${startDate}`;
+  }
+
+  return 'Every day';
+}
+
+function isDateString(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
 const styles = StyleSheet.create({
@@ -386,6 +847,143 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: radius.pill,
+  },
+  scheduleTypeGrid: {
+    gap: spacing.sm,
+  },
+  trackingTypeGrid: {
+    gap: spacing.sm,
+  },
+  trackingTypeButton: {
+    gap: spacing.xs,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceElevated,
+  },
+  selectedTrackingTypeButton: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryMuted,
+  },
+  trackingTypeTitle: {
+    color: colors.text,
+    ...typography.body,
+    fontWeight: '900',
+  },
+  selectedTrackingTypeText: {
+    color: colors.primary,
+  },
+  trackingTypeMeta: {
+    color: colors.textMuted,
+    ...typography.caption,
+  },
+  selectedTrackingTypeMeta: {
+    color: colors.text,
+  },
+  subtaskList: {
+    gap: spacing.md,
+  },
+  subtaskEditorRow: {
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceElevated,
+  },
+  subtaskInputWrap: {
+    flex: 1,
+  },
+  subtaskActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  subtaskActionButton: {
+    minHeight: 34,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+  },
+  subtaskActionText: {
+    color: colors.textMuted,
+    ...typography.small,
+    fontWeight: '900',
+  },
+  subtaskRemoveButton: {
+    borderColor: colors.destructive,
+  },
+  subtaskRemoveText: {
+    color: colors.destructive,
+    ...typography.small,
+    fontWeight: '900',
+  },
+  scheduleTypeButton: {
+    gap: spacing.xs,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceElevated,
+  },
+  selectedScheduleTypeButton: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryMuted,
+  },
+  scheduleTypeTitle: {
+    color: colors.text,
+    ...typography.body,
+    fontWeight: '900',
+  },
+  selectedScheduleTypeText: {
+    color: colors.primary,
+  },
+  scheduleTypeMeta: {
+    color: colors.textMuted,
+    ...typography.caption,
+  },
+  selectedScheduleTypeMeta: {
+    color: colors.text,
+  },
+  weekdayChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  weekdayChip: {
+    minHeight: 42,
+    minWidth: 58,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceElevated,
+  },
+  selectedWeekdayChip: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  weekdayChipText: {
+    color: colors.textMuted,
+    ...typography.caption,
+    fontWeight: '900',
+  },
+  selectedWeekdayChipText: {
+    color: colors.background,
+  },
+  intervalFields: {
+    gap: spacing.lg,
+  },
+  scheduleError: {
+    color: colors.destructive,
+    ...typography.caption,
+    fontWeight: '700',
   },
   reminderRow: {
     minHeight: 72,

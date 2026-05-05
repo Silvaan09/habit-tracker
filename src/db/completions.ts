@@ -11,18 +11,21 @@ type HabitCompletionRow = {
 export async function completeHabitForDate(habitId: string, date: string): Promise<void> {
   const db = await getDatabase();
 
-  await db.runAsync(
-    `INSERT OR IGNORE INTO habit_completions (
-      id,
-      habit_id,
+  await db.withTransactionAsync(async () => {
+    await db.runAsync('DELETE FROM habit_skips WHERE habit_id = ? AND date = ?;', habitId, date);
+    await db.runAsync(
+      `INSERT OR IGNORE INTO habit_completions (
+        id,
+        habit_id,
+        date,
+        completed_at
+      ) VALUES (?, ?, ?, ?);`,
+      createLocalId('completion'),
+      habitId,
       date,
-      completed_at
-    ) VALUES (?, ?, ?, ?);`,
-    createLocalId('completion'),
-    habitId,
-    date,
-    new Date().toISOString()
-  );
+      new Date().toISOString()
+    );
+  });
 }
 
 export async function uncompleteHabitForDate(habitId: string, date: string): Promise<void> {

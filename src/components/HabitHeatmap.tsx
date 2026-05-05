@@ -6,15 +6,19 @@ import { colors, radius, spacing, typography } from '@/src/theme';
 
 type HabitHeatmapProps = {
   completionDates: string[];
+  skippedDates?: string[];
   today: string;
   color?: string | null;
   days?: number;
+  title?: string;
+  subtitle?: string | null;
 };
 
 type HeatmapCell = {
   date: string;
   inRange: boolean;
   completed: boolean;
+  skipped: boolean;
 };
 
 type HeatmapWeek = {
@@ -27,14 +31,18 @@ const WEEKDAY_LABELS = ['', 'M', '', 'W', '', 'F', ''];
 
 export function HabitHeatmap({
   completionDates,
+  skippedDates = [],
   today,
   color = colors.primary,
   days = 90,
+  title = 'Completion heatmap',
+  subtitle,
 }: HabitHeatmapProps) {
   const completedDateSet = useMemo(() => new Set(completionDates), [completionDates]);
+  const skippedDateSet = useMemo(() => new Set(skippedDates), [skippedDates]);
   const weeks = useMemo(
-    () => getHeatmapWeeks(today, days, completedDateSet),
-    [completedDateSet, days, today]
+    () => getHeatmapWeeks(today, days, completedDateSet, skippedDateSet),
+    [completedDateSet, days, skippedDateSet, today]
   );
   const recentCompletions = useMemo(
     () => {
@@ -52,75 +60,97 @@ export function HabitHeatmap({
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Completion heatmap</Text>
-          <Text style={styles.subtitle}>
-            {recentCompletions} completion{recentCompletions === 1 ? '' : 's'} in the last {days}{' '}
-            days
+        <View style={styles.headerCopy}>
+          <Text style={styles.eyebrow}>History</Text>
+          <Text style={styles.title}>{title}</Text>
+          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+        </View>
+        <View style={styles.summaryPill}>
+          <Text style={styles.summaryValue}>{recentCompletions}</Text>
+          <Text style={styles.summaryLabel}>
+            completion{recentCompletions === 1 ? '' : 's'}
           </Text>
         </View>
       </View>
 
-      <View style={styles.monthRow}>
-        <View style={styles.weekdaySpacer} />
-        {weeks.map((week) => (
-          <Text key={week.key} numberOfLines={1} style={styles.monthLabel}>
-            {week.monthLabel ?? ''}
-          </Text>
-        ))}
-      </View>
+      <View style={styles.gridPanel}>
+        <Text style={styles.gridSummary}>
+          {recentCompletions} completed day{recentCompletions === 1 ? '' : 's'} in the last {days}{' '}
+          days
+        </Text>
 
-      <View style={styles.heatmapBody}>
-        <View style={styles.weekdayColumn}>
-          {WEEKDAY_LABELS.map((label, index) => (
-            <Text key={`${label}-${index}`} style={styles.weekdayLabel}>
-              {label}
-            </Text>
-          ))}
-        </View>
+        <View style={styles.gridWrap}>
+          <View style={styles.monthRow}>
+            <View style={styles.weekdaySpacer} />
+            {weeks.map((week) => (
+              <Text key={week.key} numberOfLines={1} style={styles.monthLabel}>
+                {week.monthLabel ?? ''}
+              </Text>
+            ))}
+          </View>
 
-        <View style={styles.weeksRow}>
-          {weeks.map((week) => (
-            <View key={week.key} style={styles.weekColumn}>
-              {week.cells.map((cell) => (
-                <View
-                  accessible={cell.inRange}
-                  accessibilityLabel={
-                    cell.inRange
-                      ? `${cell.date}: ${cell.completed ? 'completed' : 'not completed'}`
-                      : undefined
-                  }
-                  key={cell.date}
-                  style={[
-                    styles.cell,
-                    !cell.inRange && styles.outsideCell,
-                    cell.completed && {
-                      borderColor: color ?? colors.primary,
-                      backgroundColor: color ?? colors.primary,
-                    },
-                  ]}
-                />
+          <View style={styles.heatmapBody}>
+            <View style={styles.weekdayColumn}>
+              {WEEKDAY_LABELS.map((label, index) => (
+                <Text key={`${label}-${index}`} style={styles.weekdayLabel}>
+                  {label}
+                </Text>
               ))}
             </View>
-          ))}
-        </View>
-      </View>
 
-      <View style={styles.legend}>
-        <Text style={styles.legendText}>Missed</Text>
-        <View style={styles.legendCell} />
-        <View style={[styles.legendCell, { backgroundColor: color ?? colors.primary }]} />
-        <Text style={styles.legendText}>Completed</Text>
-      </View>
-
-      {completionDates.length === 0 ? (
-        <View style={styles.emptyNote}>
-          <Text style={styles.emptyTitle}>No completions yet</Text>
-          <Text style={styles.emptyText}>
-            Check this habit from Today to start filling in your history.
-          </Text>
+            <View style={styles.weeksRow}>
+              {weeks.map((week) => (
+                <View key={week.key} style={styles.weekColumn}>
+                  {week.cells.map((cell) => (
+                    <View
+                      accessible={cell.inRange}
+                      accessibilityLabel={
+                        cell.inRange
+                          ? `${cell.date}: ${
+                              cell.completed
+                                ? 'completed'
+                                : cell.skipped
+                                  ? 'skipped'
+                                  : 'not completed'
+                            }`
+                          : undefined
+                      }
+                      key={cell.date}
+                      style={[
+                        styles.cell,
+                        !cell.inRange && styles.outsideCell,
+                        cell.completed && {
+                          borderColor: color ?? colors.primary,
+                          backgroundColor: color ?? colors.primary,
+                        },
+                        cell.skipped && !cell.completed && styles.skippedCell,
+                      ]}
+                    />
+                  ))}
+                </View>
+              ))}
+            </View>
+          </View>
         </View>
-      ) : null}
+
+        <View style={styles.legend}>
+          <Text style={styles.legendText}>Missed</Text>
+          <View style={styles.legendCell} />
+          <View style={[styles.legendCell, styles.legendSkippedCell]} />
+          <Text style={styles.legendText}>Skipped</Text>
+          <View style={[styles.legendCell, { backgroundColor: color ?? colors.primary }]} />
+          <Text style={styles.legendText}>Completed</Text>
+        </View>
+
+        {completionDates.length === 0 && skippedDates.length === 0 ? (
+          <View style={styles.emptyNote}>
+            <Text style={styles.emptyTitle}>No completions yet</Text>
+            <Text style={styles.emptyText}>
+              Check this habit from Today to start filling in your history.
+            </Text>
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -128,7 +158,8 @@ export function HabitHeatmap({
 function getHeatmapWeeks(
   today: string,
   days: number,
-  completedDateSet: Set<string>
+  completedDateSet: Set<string>,
+  skippedDateSet: Set<string>
 ): HeatmapWeek[] {
   const todayDate = parseISO(today);
   const firstVisibleDate = addDays(todayDate, -(days - 1));
@@ -151,6 +182,7 @@ function getHeatmapWeeks(
           date: dateString,
           inRange,
           completed: inRange && completedDateSet.has(dateString),
+          skipped: inRange && skippedDateSet.has(dateString),
         };
       }),
     };
@@ -170,7 +202,7 @@ function getMonthLabelForWeek(weekStart: Date, weekIndex: number) {
 
 const styles = StyleSheet.create({
   card: {
-    gap: spacing.lg,
+    gap: spacing.xl,
     padding: spacing.xl,
     borderWidth: 1,
     borderColor: colors.border,
@@ -181,7 +213,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: spacing.md,
+    gap: spacing.lg,
+  },
+  headerCopy: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  eyebrow: {
+    color: colors.primary,
+    ...typography.small,
+    fontWeight: '900',
+    textTransform: 'uppercase',
   },
   title: {
     color: colors.text,
@@ -190,6 +232,46 @@ const styles = StyleSheet.create({
   subtitle: {
     color: colors.textMuted,
     ...typography.caption,
+  },
+  summaryPill: {
+    minWidth: 82,
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceElevated,
+  },
+  summaryValue: {
+    color: colors.primary,
+    fontSize: 24,
+    lineHeight: 28,
+    fontWeight: '900',
+  },
+  summaryLabel: {
+    color: colors.textMuted,
+    ...typography.small,
+    textAlign: 'center',
+  },
+  gridPanel: {
+    gap: spacing.lg,
+    alignItems: 'center',
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
+    backgroundColor: colors.surfaceElevated,
+  },
+  gridSummary: {
+    color: colors.textMuted,
+    ...typography.caption,
+    textAlign: 'center',
+  },
+  gridWrap: {
+    alignSelf: 'center',
+    maxWidth: '100%',
   },
   monthRow: {
     flexDirection: 'row',
@@ -238,10 +320,15 @@ const styles = StyleSheet.create({
   outsideCell: {
     opacity: 0,
   },
+  skippedCell: {
+    borderColor: colors.warning,
+    backgroundColor: colors.warning,
+  },
   legend: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
     gap: spacing.sm,
   },
   legendText: {
@@ -255,6 +342,10 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 3,
     backgroundColor: colors.surfaceMuted,
+  },
+  legendSkippedCell: {
+    borderColor: colors.warning,
+    backgroundColor: colors.warning,
   },
   emptyNote: {
     gap: spacing.xs,

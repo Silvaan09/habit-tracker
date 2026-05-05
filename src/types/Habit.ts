@@ -1,4 +1,6 @@
 export type HabitIconType = 'emoji' | 'icon';
+export type HabitScheduleType = 'daily' | 'weekdays' | 'interval';
+export type HabitTrackingType = 'checkbox' | 'subtasks' | 'numeric';
 
 export type Habit = {
   id: string;
@@ -12,6 +14,13 @@ export type Habit = {
   reminderEnabled: boolean;
   reminderTime: string | null;
   notificationId: string | null;
+  scheduleType: HabitScheduleType;
+  scheduleWeekdays: number[] | null;
+  scheduleIntervalDays: number | null;
+  scheduleStartDate: string | null;
+  trackingType: HabitTrackingType;
+  targetValue: number | null;
+  targetUnit: string | null;
   archived: boolean;
   createdAt: string;
   updatedAt: string;
@@ -22,4 +31,39 @@ export type HabitCompletion = {
   habitId: string;
   date: string;
   completedAt: string;
+};
+
+export type HabitSkip = {
+  id: string;
+  habitId: string;
+  date: string;
+  reason: string;
+  createdAt: string;
+};
+
+export type HabitSubtask = {
+  id: string;
+  habitId: string;
+  title: string;
+  position: number;
+  required: boolean;
+  archived: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type HabitSubtaskCompletion = {
+  id: string;
+  habitId: string;
+  subtaskId: string;
+  date: string;
+  completedAt: string;
+};
+
+export type HabitNumericEntry = {
+  id: string;
+  habitId: string;
+  date: string;
+  value: number;
+  updatedAt: string;
 };
