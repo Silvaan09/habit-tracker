@@ -1,16 +1,47 @@
 # Habit Tracker
 
-A local-first mobile habit tracking app built with **Expo React Native** and **TypeScript**.
+A local-first mobile habit tracking app built with **Expo React Native**, **TypeScript**, and **SQLite**.
 
-The app helps users build routines, track habits across different schedules, manage skips, view progress over time, and analyze consistency with visual heatmaps and statistics. It is designed as an offline-first app with local SQLite storage and no account requirement.
+Habit Tracker helps users build routines, track flexible habits, manage skipped days, follow progress with visual statistics, and keep their data stored locally on their device.
+
+---
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Screens](#screens)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Data Model](#data-model)
+- [Getting Started](#getting-started)
+- [Development Commands](#development-commands)
+- [Current Status](#current-status)
+- [Known Limitations](#known-limitations)
+- [Roadmap](#roadmap)
+- [Privacy](#privacy)
+- [License](#license)
+- [Author](#author)
 
 ---
 
 ## Overview
 
-Habit Tracker is a mobile app for creating, managing, and tracking habits. It started as a simple daily habit checklist and has grown into a more complete habit-tracking system with custom schedules, skips, subtasks, numeric goals, reminders, stats, and a dark neon visual design.
+Habit Tracker is a mobile app for creating, scheduling, completing, and reviewing habits.
 
-The app is currently built and tested through **Expo Go**, with future support planned for EAS development builds, TestFlight, and App Store release.
+The app started as a simple daily habit checklist and has grown into a more complete habit-tracking system with:
+
+- flexible schedules
+- skipped days with reasons
+- subtasks
+- numeric goals
+- local reminders
+- completion heatmaps
+- activity statistics
+- local import/export
+- a dark neon mobile UI
+
+The app is designed to be **offline-first** and **local-first**. It does not require an account, backend, or cloud sync to work.
 
 ---
 
@@ -18,54 +49,32 @@ The app is currently built and tested through **Expo Go**, with future support p
 
 ### Habit Management
 
-- Create, edit, archive, and manage habits
-- Choose custom habit icons or emojis
-- Add habit descriptions
-- Select custom accent colors
-- View habit details and historical progress
-- Restore or manage archived habits, if enabled in the current build
+Users can:
+
+- create habits
+- edit habits
+- archive habits
+- choose habit colors
+- choose custom icons or emojis
+- add descriptions
+- configure reminders
+- view detailed habit history
+
+Each habit can have its own visual identity through an icon/emoji and accent color.
+
+---
 
 ### Flexible Habit Scheduling
 
 Habits are not limited to daily repetition.
 
-Supported schedule types include:
+Supported schedule types:
 
-- Daily habits
-- Specific weekday habits
-- Interval habits, such as every 3 days
-- Selected-date tracking through the Today screen
+#### Daily
 
-The Today screen updates based on the selected date, not only the current day.
-
-### Completion Tracking
-
-- Mark habits as completed for a selected date
-- Unmark habits if completed by mistake
-- Track completions locally by date
-- Prevent future dates from being completed
-- View past completions through history and heatmaps
-
-### Skips With Reasons
-
-Users can skip a habit for a specific day, but they must provide a reason.
-
-Skipped days are treated differently from missed days:
-
-- Skipped habits are not counted as completed
-- Skipped habits are not treated as failures
-- Skips are shown distinctly in the overview/history
-- Completing a skipped habit removes the skip
-- Skipping a completed habit removes the completion
-
-### Subtasks
-
-Habits can contain subtasks.
+The habit appears every day.
 
 Example:
 
 ```text
-Supplements
-- Vitamin D
-- Magnesium
-- Omega 3
+Read 10 pages
