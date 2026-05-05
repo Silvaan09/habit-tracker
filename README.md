@@ -1,4 +1,4 @@
-![Preview](assets/logo.png)
+![Preview](assets/images/Logo.png)
 # Habit Tracker - Habito
 
 A local-first mobile habit tracking app built with **Expo React Native** and **TypeScript**. The app helps users build routines, track progress across days, manage flexible habit schedules, and review consistency through visual stats and heatmaps.
