@@ -1,6 +1,12 @@
 import type { Habit } from '@/src/types/Habit';
 
 export function isHabitScheduledForDate(habit: Habit, date: string): boolean {
+  const scheduleStartDate = getHabitScheduleStartDate(habit);
+
+  if (date < scheduleStartDate) {
+    return false;
+  }
+
   if (habit.scheduleType === 'weekdays') {
     const weekdays = habit.scheduleWeekdays ?? [];
 
@@ -9,13 +15,12 @@ export function isHabitScheduledForDate(habit: Habit, date: string): boolean {
 
   if (habit.scheduleType === 'interval') {
     const intervalDays = habit.scheduleIntervalDays;
-    const startDate = habit.scheduleStartDate ?? getLocalDateStringFromValue(habit.createdAt);
 
-    if (!intervalDays || intervalDays < 1 || date < startDate) {
+    if (!intervalDays || intervalDays < 1) {
       return false;
     }
 
-    return differenceInCalendarDaysLocal(startDate, date) % intervalDays === 0;
+    return differenceInCalendarDaysLocal(scheduleStartDate, date) % intervalDays === 0;
   }
 
   return true;
@@ -42,8 +47,8 @@ export function calculateScheduleAwareCompletionRate(
   today: string,
   skippedDates: string[] = []
 ): number {
-  const createdDate = getLocalDateStringFromValue(habit.createdAt);
-  const scheduledDates = getScheduledDatesForHabit(habit, createdDate, today);
+  const startDate = getHabitAnalyticsStartDate(habit, completionDates, skippedDates);
+  const scheduledDates = getScheduledDatesForHabit(habit, startDate, today);
   const skippedDateSet = new Set(skippedDates);
   const trackableScheduledDates = scheduledDates.filter((date) => !skippedDateSet.has(date));
 
@@ -56,6 +61,20 @@ export function calculateScheduleAwareCompletionRate(
     .filter((date) => scheduledDateSet.has(date)).length;
 
   return Math.min(completedScheduledDays / trackableScheduledDates.length, 1);
+}
+
+function getHabitAnalyticsStartDate(
+  habit: Habit,
+  completionDates: string[] = [],
+  skippedDates: string[] = []
+): string {
+  return [getHabitScheduleStartDate(habit), ...completionDates, ...skippedDates]
+    .filter(isDateString)
+    .sort()[0];
+}
+
+function getHabitScheduleStartDate(habit: Habit) {
+  return habit.scheduleStartDate ?? getLocalDateStringFromValue(habit.createdAt);
 }
 
 export function getWeekdayNumber(date: string): number {
@@ -96,6 +115,10 @@ function getLocalDateStringFromValue(value: string) {
   const day = String(date.getDate()).padStart(2, '0');
 
   return `${year}-${month}-${day}`;
+}
+
+function isDateString(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
 function parseDateString(dateString: string) {

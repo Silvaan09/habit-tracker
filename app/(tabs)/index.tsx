@@ -25,11 +25,14 @@ import {
 } from 'react-native';
 
 import { EmptyState } from '@/src/components/EmptyState';
+import { HabitCrownBadge } from '@/src/components/HabitCrownBadge';
+import { HabitHistoryMiniRow } from '@/src/components/HabitHistoryMiniRow';
 import { HabitIcon } from '@/src/components/HabitIcon';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { Screen } from '@/src/components/Screen';
 import {
   completeHabitForDate,
+  getCompletionsForHabit,
   getCompletionsForDate,
   uncompleteHabitForDate,
 } from '@/src/db/completions';
@@ -39,6 +42,7 @@ import { getNumericEntryForDate, setNumericEntryForDate } from '@/src/db/numeric
 import {
   getSkipsForDate,
   getSkipsForDateRange,
+  getSkipsForHabit,
   skipHabitForDate,
   unskipHabitForDate,
 } from '@/src/db/skips';
@@ -63,6 +67,15 @@ import {
 } from '@/src/utils/dates';
 import { TODAY_TAB_RESELECT_EVENT } from '@/src/utils/navigation';
 import { getScheduledHabitsForDate } from '@/src/utils/schedule';
+import {
+  calculateScheduleAwareCurrentStreak,
+  getHabitCrownMilestone,
+  type HabitCrownMilestone,
+} from '@/src/utils/milestones';
+import {
+  getRecentHabitHistoryItems,
+  type HabitHistoryItem,
+} from '@/src/utils/recentHabitHistory';
 
 type HabitProgress = {
   label: string;
@@ -77,6 +90,8 @@ export default function TodayScreen() {
   const [skips, setSkips] = useState<HabitSkip[]>([]);
   const [weeklySkips, setWeeklySkips] = useState<HabitSkip[]>([]);
   const [progressByHabitId, setProgressByHabitId] = useState<Record<string, HabitProgress>>({});
+  const [crownByHabitId, setCrownByHabitId] = useState<Record<string, HabitCrownMilestone>>({});
+  const [historyByHabitId, setHistoryByHabitId] = useState<Record<string, HabitHistoryItem[]>>({});
   const [actualTodayDate, setActualTodayDate] = useState(getTodayDateString);
   const [selectedDate, setSelectedDate] = useState(getTodayDateString);
   const [visibleWeekStart, setVisibleWeekStart] = useState(() =>
@@ -124,6 +139,10 @@ export default function TodayScreen() {
     setSkips(dateSkips);
     setWeeklySkips(weekSkips);
     setProgressByHabitId(await getProgressByHabitId(activeHabits, dateToLoad));
+    setCrownByHabitId(await getCrownMilestonesByHabitId(activeHabits, currentToday));
+    setHistoryByHabitId(
+      await getRecentHistoryByHabitId(activeHabits, getHistoryEndDate(dateToLoad, currentToday))
+    );
   }, []);
 
   useFocusEffect(
@@ -306,6 +325,12 @@ export default function TodayScreen() {
     setSkips(dateSkips);
     setWeeklySkips(weekSkips);
     setProgressByHabitId(await getProgressByHabitId(habits, selectedDate));
+    const currentToday = getTodayDateString();
+
+    setCrownByHabitId(await getCrownMilestonesByHabitId(habits, currentToday));
+    setHistoryByHabitId(
+      await getRecentHistoryByHabitId(habits, getHistoryEndDate(selectedDate, currentToday))
+    );
   }
 
   function openDatePicker() {
@@ -601,6 +626,9 @@ export default function TodayScreen() {
             <Text style={styles.buildDayEyebrow}>{selectedDayLabel}</Text>
             <Text style={styles.buildDayTitle}>Build the day</Text>
             <Text style={styles.buildDayDate}>{selectedDateDisplay}</Text>
+            <Text style={styles.buildDaySummaryClean}>
+              {completedCount} done - {skippedCount} skipped - {remainingCount} left
+            </Text>
             <Text style={styles.buildDaySummary}>
               {completedCount} done · {skippedCount} skipped · {remainingCount} left
             </Text>
@@ -612,16 +640,16 @@ export default function TodayScreen() {
           </View>
         </View>
 
-        <Text style={styles.buildDayMotivation}>{motivationLine}</Text>
-        <View style={styles.skipLimitPill}>
+        <AnimatedProgressBar color={colors.primary} height={12} percent={completionPercent / 100} />
+
+        <View style={styles.buildDayFooter}>
+          <Text style={styles.buildDayMotivation}>{motivationLine}</Text>
           <Text style={styles.skipLimitText}>
             {skipsRemainingThisWeek > 0
               ? `${skipsRemainingThisWeek} skip left this week`
               : 'No skips left this week'}
           </Text>
         </View>
-
-        <AnimatedProgressBar color={colors.primary} height={12} percent={completionPercent / 100} />
       </View>
 
       <View style={styles.weekCardConnected} {...weekPanResponder.panHandlers}>
@@ -731,6 +759,8 @@ export default function TodayScreen() {
                 skipped={skipped}
                 skipReason={skip?.reason}
                 progress={progress}
+                crownMilestone={crownByHabitId[habit.id] ?? getHabitCrownMilestone(0)}
+                historyItems={historyByHabitId[habit.id] ?? []}
                 disabled={Boolean(busyHabitIds[habit.id])}
                 progressDisabled={selectedDateIsFuture || skipped}
                 skipDisabled={selectedDateIsFuture}
@@ -1124,6 +1154,8 @@ type TodayHabitCardProps = {
   skipped: boolean;
   skipReason?: string | null;
   progress?: HabitProgress;
+  crownMilestone: HabitCrownMilestone;
+  historyItems: HabitHistoryItem[];
   disabled: boolean;
   progressDisabled: boolean;
   skipDisabled: boolean;
@@ -1142,6 +1174,8 @@ function TodayHabitCard({
   skipped,
   skipReason,
   progress,
+  crownMilestone,
+  historyItems,
   disabled,
   progressDisabled,
   skipDisabled,
@@ -1158,6 +1192,7 @@ function TodayHabitCard({
   const large = isProgressHabit || (progress?.percent ?? 0) > 0;
   const statusLabel = completed ? 'Completed' : skipped ? 'Skipped' : 'Remaining';
   const progressPercent = Math.max(0, Math.min(progress?.percent ?? (completed ? 1 : 0), 1));
+  const visibleHistoryItems = large ? historyItems : historyItems.slice(-5);
 
   function handleToggle(event: GestureResponderEvent) {
     event.stopPropagation();
@@ -1193,22 +1228,22 @@ function TodayHabitCard({
         pressed && styles.pressed,
         disabled && styles.disabledCard,
       ]}>
-      <View
-        style={[
-          styles.habitCardAccent,
-          { backgroundColor: completed ? colors.primary : skipped ? colors.warning : accentColor },
-        ]}
-      />
-
       <View style={styles.habitCardTop}>
-        <HabitIcon
-          color={accentColor}
-          fallbackIcon={habit.icon}
-          iconLibrary={habit.iconLibrary}
-          iconType={habit.iconType}
-          iconValue={habit.iconValue}
-          size={large ? 50 : 44}
-        />
+        <View style={styles.habitIconWrap}>
+          <View style={[styles.habitIconTile, { backgroundColor: `${accentColor}22` }]}>
+            <HabitIcon
+              color={accentColor}
+              fallbackIcon={habit.icon}
+              iconLibrary={habit.iconLibrary}
+              iconType={habit.iconType}
+              iconValue={habit.iconValue}
+              size={large ? 38 : 34}
+            />
+          </View>
+          <View style={styles.crownOverlay}>
+            <HabitCrownBadge compact milestone={crownMilestone} />
+          </View>
+        </View>
 
         {isProgressHabit ? (
           <Pressable
@@ -1265,6 +1300,8 @@ function TodayHabitCard({
           <AnimatedProgressBar color={accentColor} height={8} percent={progressPercent} />
         </Pressable>
       ) : null}
+
+      <HabitHistoryMiniRow items={visibleHistoryItems} />
 
       <View style={styles.habitCardFooter}>
         <View
@@ -1367,6 +1404,55 @@ async function getProgressByHabitId(habits: Habit[], date: string) {
   );
 }
 
+async function getCrownMilestonesByHabitId(habits: Habit[], today: string) {
+  const crownEntries = await Promise.all(
+    habits.map(async (habit): Promise<[string, HabitCrownMilestone]> => {
+      const [completions, skips] = await Promise.all([
+        getCompletionsForHabit(habit.id),
+        getSkipsForHabit(habit.id),
+      ]);
+      const currentStreak = calculateScheduleAwareCurrentStreak(
+        habit,
+        completions.map((completion) => completion.date),
+        today,
+        skips.map((skip) => skip.date)
+      );
+
+      return [habit.id, getHabitCrownMilestone(currentStreak)];
+    })
+  );
+
+  return Object.fromEntries(crownEntries);
+}
+
+async function getRecentHistoryByHabitId(habits: Habit[], endDate: string) {
+  const historyEntries = await Promise.all(
+    habits.map(async (habit): Promise<[string, HabitHistoryItem[]]> => {
+      const [completions, skips] = await Promise.all([
+        getCompletionsForHabit(habit.id),
+        getSkipsForHabit(habit.id),
+      ]);
+
+      return [
+        habit.id,
+        getRecentHabitHistoryItems({
+          completions,
+          count: 7,
+          endDate,
+          habit,
+          skips,
+        }),
+      ];
+    })
+  );
+
+  return Object.fromEntries(historyEntries);
+}
+
+function getHistoryEndDate(selectedDate: string, today: string) {
+  return selectedDate > today ? today : selectedDate;
+}
+
 function formatProgressNumber(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
@@ -1385,7 +1471,7 @@ function getMotivationLine(completionPercent: number) {
   }
 
   if (completionPercent > 0) {
-    return 'Keep going!';
+    return 'Keep going.';
   }
 
   return 'Start with one small step.';
@@ -1417,8 +1503,8 @@ const styles = StyleSheet.create({
     paddingBottom: 112,
   },
   buildDayCard: {
-    gap: spacing.lg,
-    padding: spacing.xl,
+    gap: spacing.md,
+    padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.xl,
@@ -1442,7 +1528,7 @@ const styles = StyleSheet.create({
   },
   buildDayTitle: {
     color: colors.text,
-    ...typography.title,
+    ...typography.heading,
   },
   buildDayDate: {
     color: colors.textMuted,
@@ -1450,12 +1536,15 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   buildDaySummary: {
+    display: 'none',
+  },
+  buildDaySummaryClean: {
     color: colors.textMuted,
     ...typography.caption,
   },
   buildDayPercent: {
-    width: 92,
-    height: 92,
+    width: 78,
+    height: 78,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -1465,8 +1554,8 @@ const styles = StyleSheet.create({
   },
   buildDayPercentValue: {
     color: colors.primary,
-    fontSize: 28,
-    lineHeight: 32,
+    fontSize: 24,
+    lineHeight: 28,
     fontWeight: '900',
   },
   buildDayPercentLabel: {
@@ -1476,21 +1565,18 @@ const styles = StyleSheet.create({
   },
   buildDayMotivation: {
     color: colors.text,
-    ...typography.body,
+    ...typography.caption,
     fontWeight: '800',
   },
-  skipLimitPill: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.warning,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceElevated,
+  buildDayFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
   },
   skipLimitText: {
     color: colors.warning,
-    ...typography.caption,
+    ...typography.small,
     fontWeight: '900',
   },
   animatedProgressTrack: {
@@ -1812,39 +1898,31 @@ const styles = StyleSheet.create({
   },
   habitCard: {
     position: 'relative',
-    minHeight: 168,
-    gap: spacing.md,
+    minHeight: 152,
+    gap: spacing.sm,
     overflow: 'hidden',
-    padding: spacing.lg,
+    padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.xl,
+    borderRadius: radius.lg,
     backgroundColor: colors.surface,
   },
   smallHabitCard: {
     width: '47.8%',
   },
   largeHabitCard: {
-    width: '100%',
-    minHeight: 196,
+    width: '47.8%',
+    minHeight: 178,
   },
   completedHabitCard: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primaryMuted,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceElevated,
   },
   skippedHabitCard: {
-    borderColor: colors.warning,
+    borderColor: colors.border,
   },
   disabledCard: {
     opacity: 0.52,
-  },
-  habitCardAccent: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 5,
-    backgroundColor: colors.primary,
   },
   habitCardTop: {
     flexDirection: 'row',
@@ -1852,9 +1930,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.md,
   },
+  habitIconWrap: {
+    position: 'relative',
+  },
+  habitIconTile: {
+    width: 52,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.lg,
+  },
+  crownOverlay: {
+    position: 'absolute',
+    right: -8,
+    bottom: -8,
+  },
   cardCheck: {
-    width: 34,
-    height: 34,
+    width: 38,
+    height: 38,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
@@ -1870,8 +1963,8 @@ const styles = StyleSheet.create({
     opacity: 0.42,
   },
   progressCircle: {
-    width: 54,
-    height: 54,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
@@ -1888,7 +1981,7 @@ const styles = StyleSheet.create({
   },
   habitCardName: {
     color: colors.text,
-    ...typography.body,
+    ...typography.caption,
     fontWeight: '900',
   },
   habitCardHint: {
@@ -1901,7 +1994,7 @@ const styles = StyleSheet.create({
   },
   cardProgressLabel: {
     color: colors.textMuted,
-    ...typography.caption,
+    ...typography.small,
     fontWeight: '800',
   },
   cardProgressTrack: {
@@ -1922,7 +2015,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   statusPill: {
-    minHeight: 28,
+    minHeight: 26,
     justifyContent: 'center',
     paddingHorizontal: spacing.sm,
     borderRadius: radius.pill,
@@ -1948,7 +2041,7 @@ const styles = StyleSheet.create({
     color: colors.warning,
   },
   cardActionButton: {
-    minHeight: 30,
+    minHeight: 28,
     justifyContent: 'center',
     paddingHorizontal: spacing.sm,
     borderWidth: 1,

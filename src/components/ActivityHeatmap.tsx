@@ -15,7 +15,6 @@ type ActivityHeatmapProps = {
   days: ActivityHeatmapDay[];
   endDate: string;
   startDate: string;
-  color?: string;
   emptyMessage?: string;
   scrollable?: boolean;
 };
@@ -36,7 +35,6 @@ export function ActivityHeatmap({
   days,
   endDate,
   startDate,
-  color = colors.primary,
   emptyMessage = 'No completions in this range yet.',
   scrollable = false,
 }: ActivityHeatmapProps) {
@@ -84,7 +82,7 @@ export function ActivityHeatmap({
                   style={[
                     styles.cell,
                     !cell.inRange && styles.outsideCell,
-                    getCellIntensityStyle(cell.percentage, color),
+                    getCellIntensityStyle(cell.percentage),
                   ]}
                 />
               ))}
@@ -116,9 +114,15 @@ export function ActivityHeatmap({
       <View style={styles.legend}>
         <Text style={styles.legendText}>Less</Text>
         <View style={styles.legendCell} />
-        <View style={[styles.legendCell, styles.lowLegendCell]} />
-        <View style={[styles.legendCell, styles.midLegendCell]} />
-        <View style={[styles.legendCell, { backgroundColor: color, borderColor: color }]} />
+        {colors.activityIntensity.map((activityColor) => (
+          <View
+            key={activityColor}
+            style={[
+              styles.legendCell,
+              { backgroundColor: activityColor, borderColor: activityColor },
+            ]}
+          />
+        ))}
         <Text style={styles.legendText}>More</Text>
       </View>
 
@@ -134,7 +138,7 @@ function getHeatmapWeeks(
 ): HeatmapWeek[] {
   const start = parseISO(startDate);
   const end = parseISO(endDate);
-  const gridStart = startOfWeek(start);
+  const gridStart = startOfWeek(start, { weekStartsOn: 1 });
   const totalGridDays = differenceInCalendarDays(end, gridStart) + 1;
   const totalWeeks = Math.ceil(totalGridDays / 7);
 
@@ -173,17 +177,40 @@ function getMonthLabelForWeek(weekStart: Date, weekIndex: number) {
   return null;
 }
 
-function getCellIntensityStyle(percentage: number, color: string) {
-  if (percentage >= 0.75) {
-    return { borderColor: color, backgroundColor: color };
+function getCellIntensityStyle(percentage: number) {
+  if (percentage >= 0.9) {
+    return {
+      borderColor: colors.activityIntensity[4],
+      backgroundColor: colors.activityIntensity[4],
+    };
   }
 
-  if (percentage >= 0.4) {
-    return styles.midCell;
+  if (percentage >= 0.7) {
+    return {
+      borderColor: colors.activityIntensity[3],
+      backgroundColor: colors.activityIntensity[3],
+    };
+  }
+
+  if (percentage >= 0.45) {
+    return {
+      borderColor: colors.activityIntensity[2],
+      backgroundColor: colors.activityIntensity[2],
+    };
+  }
+
+  if (percentage >= 0.2) {
+    return {
+      borderColor: colors.activityIntensity[1],
+      backgroundColor: colors.activityIntensity[1],
+    };
   }
 
   if (percentage > 0) {
-    return styles.lowCell;
+    return {
+      borderColor: colors.activityIntensity[0],
+      backgroundColor: colors.activityIntensity[0],
+    };
   }
 
   return null;
@@ -252,14 +279,6 @@ const styles = StyleSheet.create({
   outsideCell: {
     opacity: 0,
   },
-  lowCell: {
-    borderColor: colors.primaryMuted,
-    backgroundColor: colors.primaryMuted,
-  },
-  midCell: {
-    borderColor: colors.habitGreen,
-    backgroundColor: colors.habitGreen,
-  },
   legend: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -277,14 +296,6 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 3,
     backgroundColor: colors.surfaceMuted,
-  },
-  lowLegendCell: {
-    borderColor: colors.primaryMuted,
-    backgroundColor: colors.primaryMuted,
-  },
-  midLegendCell: {
-    borderColor: colors.habitGreen,
-    backgroundColor: colors.habitGreen,
   },
   emptyText: {
     color: colors.textSubtle,

@@ -1,7 +1,7 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { EmptyState } from '@/src/components/EmptyState';
 import { HabitIcon } from '@/src/components/HabitIcon';
@@ -114,7 +114,7 @@ export default function NotificationsScreen() {
       <View style={styles.header}>
         <Text style={styles.eyebrow}>Notifications</Text>
         <Text style={styles.title}>Reminders</Text>
-        <Text style={styles.subtitle}>Review local reminder times and notification access.</Text>
+        <Text style={styles.subtitle}>Upcoming local habit reminders.</Text>
       </View>
 
       {errorMessage ? (
@@ -130,50 +130,56 @@ export default function NotificationsScreen() {
         </View>
       ) : null}
 
-      <View style={styles.sectionCard}>
-        <View style={styles.sectionHeader}>
-          <View>
-            <Text style={styles.sectionEyebrow}>Permission</Text>
-            <Text style={styles.cardTitle}>Device notifications</Text>
+      {permissionStatus === 'granted' ? null : (
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionEyebrow}>Permission</Text>
+              <Text style={styles.cardTitle}>Device notifications</Text>
+            </View>
+            <View style={styles.statusPill}>
+              <Text style={styles.statusValue}>{permissionStatus}</Text>
+            </View>
           </View>
-          <View style={styles.statusPill}>
-            <Text style={styles.statusValue}>{permissionStatus}</Text>
+          <Text style={styles.bodyText}>
+            Enable notifications to receive scheduled habit reminders.
+          </Text>
+          <View style={styles.actions}>
+            <PrimaryButton
+              disabled={requesting}
+              onPress={handleRequestPermission}
+              title={requesting ? 'Requesting...' : 'Request permission'}
+            />
+            <PrimaryButton
+              onPress={() => router.push('/settings')}
+              title="Open Settings"
+              variant="secondary"
+            />
           </View>
         </View>
-        {permissionStatus === 'granted' ? (
-          <Text style={styles.bodyText}>Your device can show scheduled habit reminders.</Text>
-        ) : (
-          <>
-            <Text style={styles.bodyText}>
-              Enable notifications to receive scheduled habit reminders.
-            </Text>
-            <View style={styles.actions}>
-              <PrimaryButton
-                disabled={requesting}
-                onPress={handleRequestPermission}
-                title={requesting ? 'Requesting...' : 'Request permission'}
-              />
-              <PrimaryButton
-                onPress={() => router.push('/settings')}
-                title="Open Settings"
-                variant="secondary"
-              />
-            </View>
-          </>
-        )}
-      </View>
+      )}
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Upcoming reminders</Text>
         {reminderHabits.length === 0 ? (
-          <EmptyState
-            title="No reminders set"
-            message="Turn on reminders from a habit's edit screen to see them here."
-          />
+          <View style={styles.emptyStack}>
+            <EmptyState
+              title="No reminders set"
+              message="Add a reminder to a habit to see it here."
+            />
+            <PrimaryButton onPress={() => router.push('/habits/new')} title="New Habit" />
+          </View>
         ) : (
           <View style={styles.reminderList}>
             {reminderHabits.map((habit) => (
-              <View key={habit.id} style={styles.reminderRow}>
+              <Pressable
+                accessibilityLabel={`Edit reminder for ${habit.name}`}
+                accessibilityRole="button"
+                key={habit.id}
+                onPress={() =>
+                  router.push({ pathname: '/habits/edit/[id]', params: { id: habit.id } })
+                }
+                style={({ pressed }) => [styles.reminderRow, pressed && styles.pressed]}>
                 <HabitIcon
                   color={habit.color ?? colors.habitGreen}
                   fallbackIcon={habit.icon}
@@ -184,18 +190,62 @@ export default function NotificationsScreen() {
                 />
                 <View style={styles.reminderText}>
                   <Text style={styles.reminderName}>{habit.name}</Text>
-                  <Text style={styles.reminderMeta}>Daily at {habit.reminderTime}</Text>
+                  <Text style={styles.reminderMeta}>{getReminderScheduleSummary(habit)}</Text>
                 </View>
                 <View style={styles.timePill}>
                   <Text style={styles.timeText}>{habit.reminderTime}</Text>
                 </View>
-              </View>
+              </Pressable>
             ))}
           </View>
         )}
       </View>
     </Screen>
   );
+}
+
+function getReminderScheduleSummary(habit: Habit) {
+  const time = habit.reminderTime ?? '--:--';
+
+  if (habit.scheduleType === 'weekdays') {
+    const weekdays = habit.scheduleWeekdays ?? [];
+
+    if (weekdays.length === 0) {
+      return `No active weekdays - ${time}`;
+    }
+
+    return `${weekdays.map(getWeekdayLabel).join(', ')} - ${time}`;
+  }
+
+  if (habit.scheduleType === 'interval') {
+    const intervalDays = habit.scheduleIntervalDays ?? 1;
+    const dayLabel = intervalDays === 1 ? 'day' : 'days';
+
+    return `Every ${intervalDays} ${dayLabel} - ${time}`;
+  }
+
+  return `Daily - ${time}`;
+}
+
+function getWeekdayLabel(weekday: number) {
+  switch (weekday) {
+    case 1:
+      return 'Mon';
+    case 2:
+      return 'Tue';
+    case 3:
+      return 'Wed';
+    case 4:
+      return 'Thu';
+    case 5:
+      return 'Fri';
+    case 6:
+      return 'Sat';
+    case 7:
+      return 'Sun';
+    default:
+      return 'Day';
+  }
 }
 
 const styles = StyleSheet.create({
@@ -292,9 +342,15 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl,
     backgroundColor: colors.surface,
   },
+  pressed: {
+    opacity: 0.78,
+  },
   reminderText: {
     flex: 1,
     gap: spacing.xs,
+  },
+  emptyStack: {
+    gap: spacing.md,
   },
   reminderName: {
     color: colors.text,

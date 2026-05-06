@@ -189,7 +189,7 @@ export default function SettingsScreen() {
       <View style={styles.header}>
         <Text style={styles.eyebrow}>Settings</Text>
         <Text style={styles.title}>Settings</Text>
-        <Text style={styles.subtitle}>Manage reminders and local data.</Text>
+        <Text style={styles.subtitle}>Manage local data and app info.</Text>
       </View>
 
       {message ? (

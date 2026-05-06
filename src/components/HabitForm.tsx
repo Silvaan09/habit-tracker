@@ -165,7 +165,7 @@ export function HabitForm({
       return;
     }
 
-    if (scheduleType === 'interval' && !isDateString(scheduleStartDate)) {
+    if (!isDateString(scheduleStartDate)) {
       setScheduleValidationMessage('Use a start date like 2026-05-05.');
       return;
     }
@@ -200,7 +200,7 @@ export function HabitForm({
       scheduleType,
       scheduleWeekdays: scheduleType === 'weekdays' ? scheduleWeekdays : null,
       scheduleIntervalDays: scheduleType === 'interval' ? parsedIntervalDays : null,
-      scheduleStartDate: scheduleType === 'interval' ? scheduleStartDate : null,
+      scheduleStartDate,
       trackingType,
       targetValue: trackingType === 'numeric' ? parsedTargetValue : null,
       targetUnit: trackingType === 'numeric' ? targetUnit.trim() || null : null,
@@ -604,6 +604,20 @@ export function HabitForm({
           </View>
         ) : null}
 
+        <View style={styles.fieldGroup}>
+          <TextInputField
+            editable={!saving}
+            helper="The habit will not appear before this date."
+            label="Start date"
+            onChangeText={(value) => {
+              setScheduleStartDate(value);
+              setScheduleValidationMessage(null);
+            }}
+            placeholder="2026-05-05"
+            value={scheduleStartDate}
+          />
+        </View>
+
         {scheduleType === 'interval' ? (
           <View style={styles.intervalFields}>
             <TextInputField
@@ -616,17 +630,6 @@ export function HabitForm({
               }}
               placeholder="3"
               value={scheduleIntervalDays}
-            />
-            <TextInputField
-              editable={!saving}
-              helper="This habit appears every X days starting from this date."
-              label="Start date"
-              onChangeText={(value) => {
-                setScheduleStartDate(value);
-                setScheduleValidationMessage(null);
-              }}
-              placeholder="2026-05-05"
-              value={scheduleStartDate}
             />
           </View>
         ) : null}
@@ -912,14 +915,14 @@ function getSchedulePreview(
       .map((weekday) => weekday.label)
       .join(', ');
 
-    return labels || 'No weekdays selected';
+    return `${labels || 'No weekdays selected'} from ${startDate}`;
   }
 
   if (scheduleType === 'interval') {
     return `Every ${intervalDays || 'X'} day${intervalDays === '1' ? '' : 's'} from ${startDate}`;
   }
 
-  return 'Every day';
+  return `Every day from ${startDate}`;
 }
 
 function isDateString(value: string) {

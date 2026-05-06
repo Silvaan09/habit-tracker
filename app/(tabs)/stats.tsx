@@ -1,11 +1,12 @@
 import { useFocusEffect } from '@react-navigation/native';
-import { addDays, differenceInCalendarDays, format } from 'date-fns';
+import { addDays, differenceInCalendarDays, format, startOfMonth, startOfYear } from 'date-fns';
 import { router } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ActivityHeatmap, type ActivityHeatmapDay } from '@/src/components/ActivityHeatmap';
 import { EmptyState } from '@/src/components/EmptyState';
+import { HabitCrownBadge } from '@/src/components/HabitCrownBadge';
 import { HabitIcon } from '@/src/components/HabitIcon';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { Screen } from '@/src/components/Screen';
@@ -18,6 +19,11 @@ import { getSkipsForHabit } from '@/src/db/skips';
 import { colors, radius, spacing, typography } from '@/src/theme';
 import type { Habit, HabitCompletion, HabitSkip } from '@/src/types/Habit';
 import { getTodayDateString } from '@/src/utils/dates';
+import {
+  calculateScheduleAwareCurrentStreak,
+  getHabitAnalyticsStartDate,
+  getHabitCrownMilestone,
+} from '@/src/utils/milestones';
 import { getScheduledHabitsForDate } from '@/src/utils/schedule';
 
 type HabitWithCompletions = {
@@ -295,6 +301,7 @@ export default function StatsScreen() {
                       </View>
                     </View>
                     <View style={styles.habitRatePill}>
+                      <HabitCrownBadge compact milestone={item.crownMilestone} />
                       <Text style={styles.completionCount}>
                         {Math.round(item.completionRate * 100)}%
                       </Text>
@@ -308,19 +315,6 @@ export default function StatsScreen() {
       )}
     </Screen>
   );
-}
-
-function getLocalDateStringFromValue(value: string) {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return value;
-  }
-
-  const date = new Date(value);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
 }
 
 function parseDateString(date: string) {
@@ -370,7 +364,7 @@ function getActivityForDate(
   dateString: string
 ): ActivityHeatmapDay {
   const eligibleHabitStats = habitStats.filter(
-    (item) => getLocalDateStringFromValue(item.habit.createdAt) <= dateString
+    (item) => getHabitStatsStartDate(item) <= dateString
   );
   const scheduledItems = getScheduledHabitsForDate(
     eligibleHabitStats.map((item) => item.habit),
@@ -438,9 +432,17 @@ function isCompleteDay(day: ActivityHeatmapDay) {
 }
 
 function getFirstHabitDate(habitStats: HabitWithCompletions[]) {
-  const dates = habitStats.map((item) => getLocalDateStringFromValue(item.habit.createdAt)).sort();
+  const dates = habitStats.map(getHabitStatsStartDate).sort();
 
   return dates[0] ?? null;
+}
+
+function getHabitStatsStartDate(item: HabitWithCompletions) {
+  return getHabitAnalyticsStartDate(
+    item.habit,
+    item.completions.map((completion) => completion.date),
+    item.skips.map((skip) => skip.date)
+  );
 }
 
 function getHabitBreakdownForDateRange(
@@ -460,7 +462,7 @@ function getHabitBreakdownForDateRange(
     for (let index = 0; index < totalDays; index += 1) {
       const dateString = format(addDays(start, index), 'yyyy-MM-dd');
 
-      if (getLocalDateStringFromValue(item.habit.createdAt) > dateString) {
+      if (getHabitStatsStartDate(item) > dateString) {
         continue;
       }
 
@@ -490,6 +492,14 @@ function getHabitBreakdownForDateRange(
       habit: item.habit,
       completedCount,
       completionRate: trackableCount === 0 ? 0 : completedCount / trackableCount,
+      crownMilestone: getHabitCrownMilestone(
+        calculateScheduleAwareCurrentStreak(
+          item.habit,
+          item.completions.map((completion) => completion.date),
+          endDate,
+          item.skips.map((skip) => skip.date)
+        )
+      ),
       scheduledCount,
       skippedCount,
     };
@@ -512,11 +522,11 @@ function getRangeStartDate(range: StatsRange, today: string) {
   const todayDate = parseDateString(today);
 
   if (range === 'year') {
-    return format(addDays(todayDate, -364), 'yyyy-MM-dd');
+    return format(startOfYear(todayDate), 'yyyy-MM-dd');
   }
 
   if (range === 'month') {
-    return format(addDays(todayDate, -29), 'yyyy-MM-dd');
+    return format(startOfMonth(todayDate), 'yyyy-MM-dd');
   }
 
   return format(addDays(todayDate, -6), 'yyyy-MM-dd');
@@ -699,6 +709,7 @@ const styles = StyleSheet.create({
   habitRatePill: {
     minWidth: 54,
     alignItems: 'center',
+    gap: spacing.xs,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: radius.pill,

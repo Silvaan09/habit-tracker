@@ -17,4 +17,5 @@ export const colors = {
   habitPurple: '#B99AFF',
   habitOrange: '#FFB86B',
   habitGreen: '#A3FF36',
+  activityIntensity: ['#3A3418', '#6B601C', '#A07816', '#D7B72E', '#B6FF3B'],
 };

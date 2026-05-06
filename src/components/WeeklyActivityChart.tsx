@@ -22,6 +22,7 @@ export function WeeklyActivityChart({ days }: WeeklyActivityChartProps) {
           day.percentage * 100,
           day.percentage > 0 ? 8 : 0
         )}%`;
+        const barColor = getActivityIntensityColor(day.percentage);
 
         return (
           <View key={day.date} style={styles.dayColumn}>
@@ -29,7 +30,7 @@ export function WeeklyActivityChart({ days }: WeeklyActivityChartProps) {
               <View
                 accessibilityLabel={`${day.weekday}: ${day.completedCount} of ${day.totalCount} habits completed`}
                 accessible
-                style={[styles.barFill, { height: barHeight }]}
+                style={[styles.barFill, { backgroundColor: barColor, height: barHeight }]}
               />
             </View>
             <Text style={styles.dayLabel}>{day.weekday}</Text>
@@ -41,6 +42,30 @@ export function WeeklyActivityChart({ days }: WeeklyActivityChartProps) {
       })}
     </View>
   );
+}
+
+function getActivityIntensityColor(percentage: number) {
+  if (percentage >= 0.9) {
+    return colors.activityIntensity[4];
+  }
+
+  if (percentage >= 0.7) {
+    return colors.activityIntensity[3];
+  }
+
+  if (percentage >= 0.45) {
+    return colors.activityIntensity[2];
+  }
+
+  if (percentage >= 0.2) {
+    return colors.activityIntensity[1];
+  }
+
+  if (percentage > 0) {
+    return colors.activityIntensity[0];
+  }
+
+  return colors.surfaceMuted;
 }
 
 const styles = StyleSheet.create({
@@ -67,7 +92,6 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: 0,
     borderRadius: radius.pill,
-    backgroundColor: colors.primary,
   },
   dayLabel: {
     color: colors.textMuted,

@@ -68,8 +68,8 @@ export async function scheduleHabitReminder(
 
   return Notifications.scheduleNotificationAsync({
     content: {
-      title: 'Habit reminder',
-      body: `Time to complete: ${input.habitName}`,
+      title: getHabitReminderTitle(input.habitName),
+      body: getHabitReminderBody(input.habitName),
       data: {
         habitId: input.habitId,
       },
@@ -131,4 +131,24 @@ async function ensureAndroidReminderChannel() {
     importance: Notifications.AndroidImportance.DEFAULT,
     sound: 'default',
   });
+}
+
+function getHabitReminderTitle(habitName: string) {
+  const trimmedHabitName = habitName.trim();
+
+  if (trimmedHabitName.length === 0) {
+    return 'Habit check-in';
+  }
+
+  return `Time for ${trimmedHabitName}`;
+}
+
+function getHabitReminderBody(habitName: string) {
+  const trimmedHabitName = habitName.trim();
+
+  if (trimmedHabitName.length === 0) {
+    return 'Tap to open your habits.';
+  }
+
+  return `${trimmedHabitName} is scheduled for today.`;
 }

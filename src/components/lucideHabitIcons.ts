@@ -13,6 +13,7 @@ import CheckCircle from 'lucide-react-native/dist/cjs/icons/circle-check-big.js'
 import Code from 'lucide-react-native/dist/cjs/icons/code.js';
 import Coffee from 'lucide-react-native/dist/cjs/icons/coffee.js';
 import Cross from 'lucide-react-native/dist/cjs/icons/cross.js';
+import Crown from 'lucide-react-native/dist/cjs/icons/crown.js';
 import Droplets from 'lucide-react-native/dist/cjs/icons/droplets.js';
 import Dumbbell from 'lucide-react-native/dist/cjs/icons/dumbbell.js';
 import FlaskConical from 'lucide-react-native/dist/cjs/icons/flask-conical.js';
@@ -57,6 +58,7 @@ export type LucideHabitIconOption = {
 };
 
 export const LucideCheck = Check;
+export const LucideCrown = Crown;
 export const LucideX = X;
 
 export const LUCIDE_HABIT_ICONS = {

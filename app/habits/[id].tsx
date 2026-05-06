@@ -5,6 +5,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { EmptyState } from '@/src/components/EmptyState';
+import { HabitCrownBadge } from '@/src/components/HabitCrownBadge';
 import { HabitHeatmap } from '@/src/components/HabitHeatmap';
 import { HabitIcon } from '@/src/components/HabitIcon';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
@@ -32,11 +33,12 @@ import type {
   HabitSubtaskCompletion,
 } from '@/src/types/Habit';
 import { getTodayDateString, isFutureDate } from '@/src/utils/dates';
-import { calculateScheduleAwareCompletionRate } from '@/src/utils/schedule';
 import {
-  calculateCurrentStreak,
-  calculateLongestStreak,
-} from '@/src/utils/streaks';
+  calculateScheduleAwareCurrentStreak,
+  calculateScheduleAwareLongestStreak,
+  getHabitCrownMilestone,
+} from '@/src/utils/milestones';
+import { calculateScheduleAwareCompletionRate } from '@/src/utils/schedule';
 
 export default function HabitDetailScreen() {
   const { date, id } = useLocalSearchParams<{ date?: string; id: string }>();
@@ -63,12 +65,22 @@ export default function HabitDetailScreen() {
   );
   const skippedDates = useMemo(() => skips.map((skip) => skip.date), [skips]);
   const currentStreak = useMemo(
-    () => calculateCurrentStreak(completionDates, today, skippedDates),
-    [completionDates, skippedDates, today]
+    () =>
+      habit
+        ? calculateScheduleAwareCurrentStreak(habit, completionDates, today, skippedDates)
+        : 0,
+    [completionDates, habit, skippedDates, today]
+  );
+  const crownMilestone = useMemo(
+    () => getHabitCrownMilestone(currentStreak),
+    [currentStreak]
   );
   const longestStreak = useMemo(
-    () => calculateLongestStreak(completionDates, skippedDates),
-    [completionDates, skippedDates]
+    () =>
+      habit
+        ? calculateScheduleAwareLongestStreak(habit, completionDates, today, skippedDates)
+        : 0,
+    [completionDates, habit, skippedDates, today]
   );
   const completionRate = useMemo(
     () =>
@@ -285,6 +297,14 @@ export default function HabitDetailScreen() {
 
         <View style={styles.headerSummary}>
           <View style={styles.summaryPill}>
+            {crownMilestone.tier === 'none' ? (
+              <Text style={styles.noCrownText}>No crown yet</Text>
+            ) : (
+              <HabitCrownBadge milestone={crownMilestone} />
+            )}
+            <Text style={styles.summaryLabel}>achievement</Text>
+          </View>
+          <View style={styles.summaryPill}>
             <Text style={styles.summaryValue}>{currentStreak}</Text>
             <Text style={styles.summaryLabel}>current streak</Text>
           </View>
@@ -473,10 +493,12 @@ const styles = StyleSheet.create({
   },
   headerSummary: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.md,
   },
   summaryPill: {
-    flex: 1,
+    flexGrow: 1,
+    minWidth: 120,
     gap: spacing.xs,
     padding: spacing.lg,
     borderRadius: radius.lg,
@@ -491,6 +513,11 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     ...typography.small,
     textTransform: 'uppercase',
+  },
+  noCrownText: {
+    color: colors.textMuted,
+    ...typography.caption,
+    fontWeight: '900',
   },
   statsGrid: {
     flexDirection: 'row',
