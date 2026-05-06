@@ -18,6 +18,7 @@ The app currently runs in **Expo Go** for development and is structured to suppo
 - **Habit descriptions, colors, and live preview cards**
 - **Improved icon background color selector**
 - **Compact dark neon habit cards**
+- **Saved Today card layout preferences**
 - **Offline support** with no required account or cloud sync
 
 ### Flexible Scheduling
@@ -27,6 +28,7 @@ Habits can be scheduled in multiple ways:
 - **Daily habits**
 - **Specific weekdays**
 - **Every X days / interval-based habits**
+- **Schedule start dates** so habits do not appear before they begin
 - **Selected-date tracking**
   - Scroll through weeks
   - Open a date selector from the week label
@@ -59,9 +61,14 @@ Habits can be scheduled in multiple ways:
   - Done / skipped / remaining counts
   - Animated progress bar
 - **Compact habit box layout**
+- **Manual Today layout edit mode**
+  - Choose card sizes: auto, small, tall, wide, or large
+  - Move cards earlier or later without drag-and-drop
+  - Persist layout choices locally
 - **Mini recent-history overview for each habit**
   - Shows recent scheduled occurrences
   - Distinguishes completed, skipped, and missed days
+- **Week navigation and custom date picker**
 - **Cleaner bottom tab navigation**
   - Today
   - Stats
@@ -75,17 +82,23 @@ Habits can be scheduled in multiple ways:
   - Last 7 days
   - Month
   - Year
-- **Corrected range-based completion percentages**
-  - Week-to-date
+- **Range-based completion percentages**
+  - Last 7 days
   - Month-to-date
   - Year-to-date
+- **Whole-day stats**
+  - Complete days across tracked days
+  - Average daily completion
+  - Current streak and longest streak based on fully completed scheduled days
+- **Skipped habits are excluded from daily denominators**
 - **GitHub-style completion heatmaps**
+  - Month and Year activity views
+  - Readable month labels
 - **Habit detail pages** with:
   - Streaks
   - Completion history
   - Heatmap overview
   - Subtask/numeric progress
-- **Current streak and longest streak tracking**
 - **Habit-specific milestone/crown support**
 - **More distinct yellow-based stat color intensity levels**
 
@@ -93,6 +106,10 @@ Habits can be scheduled in multiple ways:
 
 - **Local reminder notifications**
 - **Improved notification copy**
+- **Focused reminder editor**
+  - Edit reminder time without opening the full habit editor
+  - Turn reminders on or off from the Notifications tab
+- **Shared 5-minute time picker**
 - **Notifications tab**
   - Shows real upcoming reminders
   - Hides permission request after permission is granted
@@ -100,13 +117,22 @@ Habits can be scheduled in multiple ways:
 
 ### Settings and Data
 
-- **Settings screen** with local app preferences
-- **Export local data**
-- **Import local data**
-- **Reset local data**
+- **Settings screen** with simple local data controls
+- **Back up local data**
+- **Restore local data from exported backup text**
+- **Delete all local data with confirmation**
 - **Local privacy note**
 - **No account required**
 - **No cloud sync required**
+
+### UI and Navigation Polish
+
+- **Dark neon design system**
+- **Lucide-only habit icon selection**
+- **Cleaner stack headers and custom back button**
+- **Bottom sheets with fade-only backdrops and smoother sheet motion**
+- **Bottom tab bar with visible labels and a center Add button**
+- **Scroll position preservation when returning to Today**
 
 ## Tech Stack
 
@@ -130,6 +156,7 @@ This project is currently in active development. The core habit tracking experie
 - Subtasks
 - Numeric goals
 - Inline Today progress updates
+- Manual Today layout editing
 - Stats and heatmaps
 - Local reminders
 - Import/export/reset data management
@@ -175,7 +202,7 @@ Possible future improvements include:
 - Morning and evening routines
 - Calendar picker refinements
 - Archive management
-- More detailed achievements and crowns
+- More detailed achievements and crown history
 - Better advanced analytics
 - Optional cloud sync
 - iOS/Android widgets
