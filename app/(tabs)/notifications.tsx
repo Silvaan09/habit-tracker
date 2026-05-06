@@ -6,6 +6,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { EmptyState } from '@/src/components/EmptyState';
 import { HabitIcon } from '@/src/components/HabitIcon';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
+import { ReminderEditorModal } from '@/src/components/ReminderEditorModal';
 import { Screen } from '@/src/components/Screen';
 import { initDatabase } from '@/src/db/database';
 import { getActiveHabits } from '@/src/db/habits';
@@ -23,6 +24,7 @@ export default function NotificationsScreen() {
   const [requesting, setRequesting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [editingReminderHabit, setEditingReminderHabit] = useState<Habit | null>(null);
 
   const reminderHabits = useMemo(
     () =>
@@ -176,9 +178,7 @@ export default function NotificationsScreen() {
                 accessibilityLabel={`Edit reminder for ${habit.name}`}
                 accessibilityRole="button"
                 key={habit.id}
-                onPress={() =>
-                  router.push({ pathname: '/habits/edit/[id]', params: { id: habit.id } })
-                }
+                onPress={() => setEditingReminderHabit(habit)}
                 style={({ pressed }) => [styles.reminderRow, pressed && styles.pressed]}>
                 <HabitIcon
                   color={habit.color ?? colors.habitGreen}
@@ -200,6 +200,12 @@ export default function NotificationsScreen() {
           </View>
         )}
       </View>
+      <ReminderEditorModal
+        habit={editingReminderHabit}
+        onClose={() => setEditingReminderHabit(null)}
+        onSaved={loadNotificationsData}
+        visible={Boolean(editingReminderHabit)}
+      />
     </Screen>
   );
 }

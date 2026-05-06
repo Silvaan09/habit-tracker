@@ -1,10 +1,11 @@
-import { PropsWithChildren } from 'react';
+import { PropsWithChildren, type Ref } from 'react';
 import {
   ScrollView,
   StyleProp,
   StyleSheet,
   View,
   ViewStyle,
+  type ScrollViewProps,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -12,6 +13,9 @@ import { colors, spacing } from '@/src/theme';
 
 type ScreenProps = PropsWithChildren<{
   scroll?: boolean;
+  scrollRef?: Ref<ScrollView>;
+  onScroll?: ScrollViewProps['onScroll'];
+  scrollEventThrottle?: ScrollViewProps['scrollEventThrottle'];
   style?: StyleProp<ViewStyle>;
   contentContainerStyle?: StyleProp<ViewStyle>;
 }>;
@@ -19,6 +23,9 @@ type ScreenProps = PropsWithChildren<{
 export function Screen({
   children,
   scroll = true,
+  scrollRef,
+  onScroll,
+  scrollEventThrottle,
   style,
   contentContainerStyle,
 }: ScreenProps) {
@@ -33,7 +40,10 @@ export function Screen({
   return (
     <SafeAreaView style={[styles.safeArea, style]}>
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={[styles.content, contentContainerStyle]}
+        onScroll={onScroll}
+        scrollEventThrottle={scrollEventThrottle}
         showsVerticalScrollIndicator={false}>
         {children}
       </ScrollView>

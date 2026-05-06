@@ -1,6 +1,7 @@
 export type HabitIconType = 'emoji' | 'icon';
 export type HabitScheduleType = 'daily' | 'weekdays' | 'interval';
 export type HabitTrackingType = 'checkbox' | 'subtasks' | 'numeric';
+export type HabitCardLayoutSize = 'auto' | 'small' | 'tall' | 'wide' | 'large';
 
 export type Habit = {
   id: string;
@@ -21,6 +22,8 @@ export type Habit = {
   trackingType: HabitTrackingType;
   targetValue: number | null;
   targetUnit: string | null;
+  todayLayoutSize: HabitCardLayoutSize;
+  todayLayoutOrder: number;
   archived: boolean;
   createdAt: string;
   updatedAt: string;

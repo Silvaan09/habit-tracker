@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS habits (
   tracking_type TEXT NOT NULL DEFAULT 'checkbox',
   target_value REAL,
   target_unit TEXT,
+  today_layout_size TEXT NOT NULL DEFAULT 'auto',
+  today_layout_order INTEGER NOT NULL DEFAULT 0,
   archived INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL

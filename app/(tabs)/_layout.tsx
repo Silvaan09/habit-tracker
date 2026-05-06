@@ -2,7 +2,7 @@ import type { BottomTabBarButtonProps } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs, router } from 'expo-router';
 import React from 'react';
-import { DeviceEventEmitter, Pressable, StyleSheet, View } from 'react-native';
+import { DeviceEventEmitter, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { colors, radius } from '@/src/theme';
@@ -16,7 +16,7 @@ export default function TabLayout() {
         tabBarInactiveTintColor: colors.textSubtle,
         tabBarStyle: {
           position: 'absolute',
-          height: 76,
+          height: 84,
           marginHorizontal: 16,
           marginBottom: 12,
           borderTopWidth: 0,
@@ -29,14 +29,18 @@ export default function TabLayout() {
           shadowOpacity: 0.32,
           shadowRadius: 18,
           elevation: 12,
+          overflow: 'visible',
         },
         tabBarLabelStyle: {
           fontWeight: '800',
           fontSize: 11,
+          marginTop: 2,
         },
-        tabBarShowLabel: false,
+        tabBarShowLabel: true,
         tabBarItemStyle: {
-          paddingVertical: 0,
+          paddingTop: 8,
+          paddingBottom: 8,
+          overflow: 'visible',
         },
         headerShown: false,
         tabBarButton: HapticTab,
@@ -76,6 +80,11 @@ export default function TabLayout() {
         name="notifications"
         options={{
           title: 'Notifications',
+          tabBarLabel: ({ color }) => (
+            <Text numberOfLines={1} style={[styles.notificationsLabel, { color }]}>
+              Reminders
+            </Text>
+          ),
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? 'notifications' : 'notifications-outline'}
@@ -106,7 +115,7 @@ function PlusTabButton(_: BottomTabBarButtonProps) {
       onPress={() => router.push('/habits/new')}
       style={({ pressed }) => [styles.plusButtonWrap, pressed && styles.pressed]}>
       <View style={styles.plusButton}>
-        <Ionicons name="add" size={30} color={colors.background} />
+        <Ionicons name="add" size={32} color={colors.background} />
       </View>
     </Pressable>
   );
@@ -117,21 +126,30 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'visible',
+    paddingTop: 0,
+    transform: [{ translateY: -8 }],
   },
   plusButton: {
-    width: 56,
-    height: 56,
+    width: 54,
+    height: 54,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: colors.background,
-    borderRadius: radius.pill,
+    borderRadius: 27,
     backgroundColor: colors.primary,
     shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.32,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    elevation: 6,
+    zIndex: 2,
+  },
+  notificationsLabel: {
+    width: 96,
+    marginTop: 2,
+    fontSize: 11,
+    fontWeight: '800',
+    textAlign: 'center',
   },
   pressed: {
     opacity: 0.78,

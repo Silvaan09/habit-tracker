@@ -16,12 +16,17 @@ import {
   DeviceEventEmitter,
   GestureResponderEvent,
   Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   PanResponder,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
+  type ViewStyle,
 } from 'react-native';
 
 import { EmptyState } from '@/src/components/EmptyState';
@@ -37,7 +42,7 @@ import {
   uncompleteHabitForDate,
 } from '@/src/db/completions';
 import { initDatabase } from '@/src/db/database';
-import { getActiveHabits } from '@/src/db/habits';
+import { getActiveHabits, updateHabitLayout, updateHabitLayoutOrder } from '@/src/db/habits';
 import { getNumericEntryForDate, setNumericEntryForDate } from '@/src/db/numericEntries';
 import {
   getSkipsForDate,
@@ -55,6 +60,7 @@ import {
 import { colors, radius, spacing, typography } from '@/src/theme';
 import type {
   Habit,
+  HabitCardLayoutSize,
   HabitCompletion,
   HabitSkip,
   HabitSubtask,
@@ -82,9 +88,52 @@ type HabitProgress = {
   percent: number;
 };
 
+type HabitCardVariant = 'small' | 'tall' | 'wide' | 'large';
+
+type TodayGridItem = {
+  habit: Habit;
+  variant: HabitCardVariant;
+};
+
+type TodayGridPlacement = {
+  item: TodayGridItem;
+  column: 0 | 1;
+  row: number;
+  colSpan: 1 | 2;
+  rowSpan: 1 | 2;
+};
+
+type TodayGridLayout = {
+  placements: TodayGridPlacement[];
+  rowCount: number;
+};
+
+type TodayGridMetrics = {
+  gap: number;
+  cellSize: number;
+  fullWidth: number;
+};
+
+const GRID_GAP = spacing.md;
+const GRID_HORIZONTAL_PADDING = 0;
+const SCREEN_HORIZONTAL_PADDING = 20;
+
+const LAYOUT_SIZE_OPTIONS: {
+  label: string;
+  meta: string;
+  value: HabitCardLayoutSize;
+}[] = [
+  { label: 'Auto', meta: 'Default', value: 'auto' },
+  { label: 'Small', meta: '1x1', value: 'small' },
+  { label: 'Tall', meta: '1x2', value: 'tall' },
+  { label: 'Wide', meta: '2x1', value: 'wide' },
+  { label: 'Large', meta: '2x2', value: 'large' },
+];
+
 const WEEKLY_SKIP_LIMIT = 1;
 
 export default function TodayScreen() {
+  const { width: windowWidth } = useWindowDimensions();
   const [habits, setHabits] = useState<Habit[]>([]);
   const [completions, setCompletions] = useState<HabitCompletion[]>([]);
   const [skips, setSkips] = useState<HabitSkip[]>([]);
@@ -98,6 +147,9 @@ export default function TodayScreen() {
     getWeekStartDateString(getTodayDateString())
   );
   const selectedDateRef = useRef(selectedDate);
+  const hasLoadedTodayDataRef = useRef(false);
+  const todayScrollRef = useRef<ScrollView | null>(null);
+  const todayScrollYRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [busyHabitIds, setBusyHabitIds] = useState<Record<string, boolean>>({});
@@ -109,6 +161,9 @@ export default function TodayScreen() {
   const [progressEditorLoading, setProgressEditorLoading] = useState(false);
   const [progressEditorError, setProgressEditorError] = useState<string | null>(null);
   const [datePickerVisible, setDatePickerVisible] = useState(false);
+  const [layoutEditMode, setLayoutEditMode] = useState(false);
+  const [layoutSizeHabitId, setLayoutSizeHabitId] = useState<string | null>(null);
+  const [savingLayoutHabitId, setSavingLayoutHabitId] = useState<string | null>(null);
   const [datePickerMonth, setDatePickerMonth] = useState(() =>
     format(startOfMonth(parseISO(getTodayDateString())), 'yyyy-MM-dd')
   );
@@ -145,15 +200,46 @@ export default function TodayScreen() {
     );
   }, []);
 
+  const restoreTodayScrollPosition = useCallback((scrollY: number) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        todayScrollRef.current?.scrollTo({ y: scrollY, animated: false });
+      });
+    });
+  }, []);
+
+  const scrollTodayToTop = useCallback((animated: boolean) => {
+    todayScrollYRef.current = 0;
+    todayScrollRef.current?.scrollTo({ y: 0, animated });
+  }, []);
+
+  const handleTodayScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      todayScrollYRef.current = event.nativeEvent.contentOffset.y;
+    },
+    []
+  );
+
   useFocusEffect(
     useCallback(() => {
       let isActive = true;
 
       async function setup() {
+        const shouldShowInitialLoading = !hasLoadedTodayDataRef.current;
+        const scrollYBeforeRefresh = todayScrollYRef.current;
+
         try {
-          setLoading(true);
+          if (shouldShowInitialLoading) {
+            setLoading(true);
+          }
+
           setErrorMessage(null);
           await loadTodayData(selectedDateRef.current);
+          hasLoadedTodayDataRef.current = true;
+
+          if (isActive && !shouldShowInitialLoading) {
+            restoreTodayScrollPosition(scrollYBeforeRefresh);
+          }
         } catch (error) {
           console.error('Failed to initialize Today screen data', error);
 
@@ -161,7 +247,7 @@ export default function TodayScreen() {
             setErrorMessage('Something went wrong while loading your habits.');
           }
         } finally {
-          if (isActive) {
+          if (isActive && shouldShowInitialLoading) {
             setLoading(false);
           }
         }
@@ -172,7 +258,7 @@ export default function TodayScreen() {
       return () => {
         isActive = false;
       };
-    }, [loadTodayData])
+    }, [loadTodayData, restoreTodayScrollPosition])
   );
 
   const completedHabitIds = useMemo(
@@ -194,6 +280,28 @@ export default function TodayScreen() {
     () => getScheduledHabitsForDate(habits, selectedDate),
     [habits, selectedDate]
   );
+  const orderedScheduledHabits = useMemo(
+    () => getLayoutSortedHabits(scheduledHabits),
+    [scheduledHabits]
+  );
+  const todayGridItems = useMemo(
+    () => buildTodayGridItems(orderedScheduledHabits),
+    [orderedScheduledHabits]
+  );
+  const todayGridLayout = useMemo(() => buildTodayGridLayout(todayGridItems), [todayGridItems]);
+  const todayGridMetrics = useMemo(() => {
+    const availableGridWidth = Math.max(
+      0,
+      windowWidth - SCREEN_HORIZONTAL_PADDING * 2 - GRID_HORIZONTAL_PADDING * 2
+    );
+    const cellSize = Math.floor((availableGridWidth - GRID_GAP) / 2);
+
+    return {
+      cellSize,
+      fullWidth: cellSize * 2 + GRID_GAP,
+      gap: GRID_GAP,
+    };
+  }, [windowWidth]);
   const completedCount = useMemo(
     () => scheduledHabits.filter((habit) => completedHabitIds.has(habit.id)).length,
     [completedHabitIds, scheduledHabits]
@@ -235,6 +343,20 @@ export default function TodayScreen() {
     () => habits.find((habit) => habit.id === progressEditorHabitId) ?? null,
     [habits, progressEditorHabitId]
   );
+  const layoutSizeHabit = useMemo(
+    () => habits.find((habit) => habit.id === layoutSizeHabitId) ?? null,
+    [habits, layoutSizeHabitId]
+  );
+  const layoutSizeHabitOrderIndex = useMemo(() => {
+    if (!layoutSizeHabit) {
+      return -1;
+    }
+
+    return orderedScheduledHabits.findIndex((habit) => habit.id === layoutSizeHabit.id);
+  }, [layoutSizeHabit, orderedScheduledHabits]);
+  const canMoveLayoutHabitEarlier = layoutSizeHabitOrderIndex > 0;
+  const canMoveLayoutHabitLater =
+    layoutSizeHabitOrderIndex >= 0 && layoutSizeHabitOrderIndex < orderedScheduledHabits.length - 1;
   const editorCompletedSubtaskIds = useMemo(
     () => new Set(editorSubtaskCompletions.map((completion) => completion.subtaskId)),
     [editorSubtaskCompletions]
@@ -274,11 +396,14 @@ export default function TodayScreen() {
 
       selectedDateRef.current = today;
       setVisibleWeekStart(getWeekStartDateString(today));
-      void selectDate(today);
+      scrollTodayToTop(true);
+      void selectDate(today).finally(() => {
+        restoreTodayScrollPosition(0);
+      });
     });
 
     return () => subscription.remove();
-  }, [selectDate]);
+  }, [restoreTodayScrollPosition, scrollTodayToTop, selectDate]);
 
   const visibleWeekLabel = useMemo(() => {
     const weekStart = parseISO(visibleWeekStart);
@@ -596,6 +721,80 @@ export default function TodayScreen() {
     router.push({ pathname: '/habits/[id]', params: { id: habitId, date: selectedDate } });
   }
 
+  function openLayoutSizeSelector(habitId: string) {
+    setLayoutSizeHabitId(habitId);
+  }
+
+  function closeLayoutSizeSelector() {
+    if (!savingLayoutHabitId) {
+      setLayoutSizeHabitId(null);
+    }
+  }
+
+  async function selectLayoutSize(size: HabitCardLayoutSize) {
+    if (!layoutSizeHabit) {
+      return;
+    }
+
+    try {
+      setSavingLayoutHabitId(layoutSizeHabit.id);
+      setErrorMessage(null);
+      await updateHabitLayout(layoutSizeHabit.id, { todayLayoutSize: size });
+      setHabits((current) =>
+        current.map((habit) =>
+          habit.id === layoutSizeHabit.id ? { ...habit, todayLayoutSize: size } : habit
+        )
+      );
+    } catch (error) {
+      console.error('Failed to update Today layout size', error);
+      setErrorMessage('Could not update that card size. Please try again.');
+    } finally {
+      setSavingLayoutHabitId(null);
+    }
+  }
+
+  async function moveLayoutHabit(direction: 'up' | 'down') {
+    if (!layoutSizeHabit || layoutSizeHabitOrderIndex === -1) {
+      return;
+    }
+
+    const targetIndex =
+      direction === 'up' ? layoutSizeHabitOrderIndex - 1 : layoutSizeHabitOrderIndex + 1;
+
+    if (targetIndex < 0 || targetIndex >= orderedScheduledHabits.length) {
+      return;
+    }
+
+    const reorderedHabits = [...orderedScheduledHabits];
+    const selectedHabit = reorderedHabits[layoutSizeHabitOrderIndex];
+    reorderedHabits[layoutSizeHabitOrderIndex] = reorderedHabits[targetIndex];
+    reorderedHabits[targetIndex] = selectedHabit;
+
+    const nextOrders = reorderedHabits.map((habit, index) => ({
+      habitId: habit.id,
+      order: (index + 1) * 10,
+    }));
+    const orderByHabitId = new Map(nextOrders.map((item) => [item.habitId, item.order]));
+
+    try {
+      setSavingLayoutHabitId(layoutSizeHabit.id);
+      setErrorMessage(null);
+      await updateHabitLayoutOrder(nextOrders);
+      setHabits((current) =>
+        current.map((habit) => {
+          const nextOrder = orderByHabitId.get(habit.id);
+
+          return nextOrder === undefined ? habit : { ...habit, todayLayoutOrder: nextOrder };
+        })
+      );
+    } catch (error) {
+      console.error('Failed to update Today layout order', error);
+      setErrorMessage('Could not move that card. Please try again.');
+    } finally {
+      setSavingLayoutHabitId(null);
+    }
+  }
+
   async function handleRetry() {
     try {
       setLoading(true);
@@ -609,6 +808,40 @@ export default function TodayScreen() {
     }
   }
 
+  function renderTodayHabitCard(habit: Habit, variant: HabitCardVariant) {
+    const progress = progressByHabitId[habit.id];
+    const completed = completedHabitIds.has(habit.id);
+    const skipped = skippedHabitIds.has(habit.id);
+    const skip = skipByHabitId.get(habit.id);
+
+    return (
+      <TodayHabitCard
+        key={habit.id}
+        habit={habit}
+        variant={variant}
+        completed={completed}
+        skipped={skipped}
+        cardStyle={getHabitCardGeometryStyle(variant, todayGridMetrics)}
+        skipReason={skip?.reason}
+        progress={progress}
+        crownMilestone={crownByHabitId[habit.id] ?? getHabitCrownMilestone(0)}
+        historyItems={historyByHabitId[habit.id] ?? []}
+        disabled={Boolean(busyHabitIds[habit.id])}
+        editMode={layoutEditMode}
+        selectedForLayout={layoutSizeHabitId === habit.id}
+        progressDisabled={layoutEditMode || selectedDateIsFuture || skipped}
+        skipDisabled={layoutEditMode || selectedDateIsFuture}
+        toggleDisabled={layoutEditMode || selectedDateIsFuture || habit.trackingType !== 'checkbox'}
+        completionDateLabel={selectedDateLabel}
+        onEditProgress={openProgressEditor}
+        onToggle={toggleHabit}
+        onSkip={openSkipModal}
+        onUndoSkip={undoSkip}
+        onPress={layoutEditMode ? openLayoutSizeSelector : openHabitDetail}
+      />
+    );
+  }
+
   if (loading) {
     return (
       <Screen contentContainerStyle={[styles.screenContent, styles.centeredState]}>
@@ -619,7 +852,11 @@ export default function TodayScreen() {
   }
 
   return (
-    <Screen contentContainerStyle={styles.screenContent}>
+    <Screen
+      contentContainerStyle={styles.screenContent}
+      onScroll={handleTodayScroll}
+      scrollEventThrottle={16}
+      scrollRef={todayScrollRef}>
       <View style={styles.buildDayCard}>
         <View style={styles.buildDayHeader}>
           <View style={styles.buildDayCopy}>
@@ -712,14 +949,43 @@ export default function TodayScreen() {
 
       {selectedDateIsFuture ? (
         <View style={styles.infoBanner}>
-          <Text style={styles.infoText}>Future days cannot be completed or skipped yet.</Text>
+          <Text style={styles.infoText}>Future days cannot be completed yet.</Text>
         </View>
       ) : null}
 
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Habits</Text>
-        <Text style={styles.dateText}>{selectedDateDisplay}</Text>
+        <View style={styles.sectionHeaderActions}>
+          <Text style={styles.dateText}>{selectedDateDisplay}</Text>
+          <Pressable
+            accessibilityLabel={layoutEditMode ? 'Finish editing Today layout' : 'Edit Today layout'}
+            accessibilityRole="button"
+            onPress={() => {
+              setLayoutEditMode((current) => !current);
+              setLayoutSizeHabitId(null);
+            }}
+            style={({ pressed }) => [
+              styles.layoutEditButton,
+              layoutEditMode && styles.activeLayoutEditButton,
+              pressed && styles.pressed,
+            ]}>
+            <Text
+              style={[
+                styles.layoutEditButtonText,
+                layoutEditMode && styles.activeLayoutEditButtonText,
+              ]}>
+              {layoutEditMode ? 'Done' : 'Edit layout'}
+            </Text>
+          </Pressable>
+        </View>
       </View>
+
+      {layoutEditMode ? (
+        <View style={styles.layoutEditBanner}>
+          <Text style={styles.layoutEditTitle}>Layout edit mode</Text>
+          <Text style={styles.layoutEditText}>Choose card sizes. Completion actions are disabled.</Text>
+        </View>
+      ) : null}
 
       {habits.length === 0 ? (
         <View style={styles.emptyStack}>
@@ -744,36 +1010,28 @@ export default function TodayScreen() {
           <PrimaryButton onPress={openNewHabitScreen} title="Create habit" />
         </View>
       ) : (
-        <View style={styles.habitGrid}>
-          {scheduledHabits.map((habit) => {
-            const progress = progressByHabitId[habit.id];
-            const completed = completedHabitIds.has(habit.id);
-            const skipped = skippedHabitIds.has(habit.id);
-            const skip = skipByHabitId.get(habit.id);
-
-            return (
-              <TodayHabitCard
-                key={habit.id}
-                habit={habit}
-                completed={completed}
-                skipped={skipped}
-                skipReason={skip?.reason}
-                progress={progress}
-                crownMilestone={crownByHabitId[habit.id] ?? getHabitCrownMilestone(0)}
-                historyItems={historyByHabitId[habit.id] ?? []}
-                disabled={Boolean(busyHabitIds[habit.id])}
-                progressDisabled={selectedDateIsFuture || skipped}
-                skipDisabled={selectedDateIsFuture}
-                toggleDisabled={selectedDateIsFuture || habit.trackingType !== 'checkbox'}
-                completionDateLabel={selectedDateLabel}
-                onEditProgress={openProgressEditor}
-                onToggle={toggleHabit}
-                onSkip={openSkipModal}
-                onUndoSkip={undoSkip}
-                onPress={openHabitDetail}
-              />
-            );
-          })}
+        <View
+          style={[
+            styles.habitGrid,
+            {
+              height: getTodayGridHeight(todayGridLayout.rowCount, todayGridMetrics),
+              paddingHorizontal: GRID_HORIZONTAL_PADDING,
+              width: todayGridMetrics.fullWidth + GRID_HORIZONTAL_PADDING * 2,
+            },
+          ]}>
+          {todayGridLayout.placements.map((placement) => (
+            <View
+              key={placement.item.habit.id}
+              style={[
+                styles.gridPlacedItem,
+                {
+                  left: placement.column * (todayGridMetrics.cellSize + todayGridMetrics.gap),
+                  top: placement.row * (todayGridMetrics.cellSize + todayGridMetrics.gap),
+                },
+              ]}>
+              {renderTodayHabitCard(placement.item.habit, placement.item.variant)}
+            </View>
+          ))}
         </View>
       )}
 
@@ -910,6 +1168,137 @@ export default function TodayScreen() {
                   />
                 </View>
               </View>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="slide"
+        onRequestClose={closeLayoutSizeSelector}
+        transparent
+        visible={Boolean(layoutSizeHabit)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            {layoutSizeHabit ? (
+              <>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalEyebrow}>Card size</Text>
+                  <Text style={styles.modalTitle}>{layoutSizeHabit.name}</Text>
+                  <Text style={styles.modalText}>Move this card or choose how it appears on Today.</Text>
+                </View>
+
+                <View style={styles.layoutMoveRow}>
+                  <Pressable
+                    accessibilityLabel={`Move ${layoutSizeHabit.name} earlier`}
+                    accessibilityRole="button"
+                    accessibilityState={{
+                      disabled: Boolean(savingLayoutHabitId) || !canMoveLayoutHabitEarlier,
+                    }}
+                    disabled={Boolean(savingLayoutHabitId) || !canMoveLayoutHabitEarlier}
+                    onPress={() => moveLayoutHabit('up')}
+                    style={({ pressed }) => [
+                      styles.layoutMoveButton,
+                      (savingLayoutHabitId || !canMoveLayoutHabitEarlier) &&
+                        styles.disabledLayoutMoveButton,
+                      pressed && styles.pressed,
+                    ]}>
+                    <Ionicons
+                      color={
+                        canMoveLayoutHabitEarlier && !savingLayoutHabitId
+                          ? colors.text
+                          : colors.textSubtle
+                      }
+                      name="chevron-up"
+                      size={16}
+                    />
+                    <Text
+                      style={[
+                        styles.layoutMoveButtonText,
+                        (savingLayoutHabitId || !canMoveLayoutHabitEarlier) &&
+                          styles.disabledLayoutMoveButtonText,
+                      ]}>
+                      Move earlier
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    accessibilityLabel={`Move ${layoutSizeHabit.name} later`}
+                    accessibilityRole="button"
+                    accessibilityState={{
+                      disabled: Boolean(savingLayoutHabitId) || !canMoveLayoutHabitLater,
+                    }}
+                    disabled={Boolean(savingLayoutHabitId) || !canMoveLayoutHabitLater}
+                    onPress={() => moveLayoutHabit('down')}
+                    style={({ pressed }) => [
+                      styles.layoutMoveButton,
+                      (savingLayoutHabitId || !canMoveLayoutHabitLater) &&
+                        styles.disabledLayoutMoveButton,
+                      pressed && styles.pressed,
+                    ]}>
+                    <Ionicons
+                      color={
+                        canMoveLayoutHabitLater && !savingLayoutHabitId
+                          ? colors.text
+                          : colors.textSubtle
+                      }
+                      name="chevron-down"
+                      size={16}
+                    />
+                    <Text
+                      style={[
+                        styles.layoutMoveButtonText,
+                        (savingLayoutHabitId || !canMoveLayoutHabitLater) &&
+                          styles.disabledLayoutMoveButtonText,
+                      ]}>
+                      Move later
+                    </Text>
+                  </Pressable>
+                </View>
+
+                <View style={styles.layoutSizeGrid}>
+                  {LAYOUT_SIZE_OPTIONS.map((option) => {
+                    const selected = layoutSizeHabit.todayLayoutSize === option.value;
+
+                    return (
+                      <Pressable
+                        accessibilityLabel={`Set card size to ${option.label}`}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                        disabled={Boolean(savingLayoutHabitId)}
+                        key={option.value}
+                        onPress={() => selectLayoutSize(option.value)}
+                        style={({ pressed }) => [
+                          styles.layoutSizeOption,
+                          selected && styles.selectedLayoutSizeOption,
+                          pressed && styles.pressed,
+                          savingLayoutHabitId && styles.controlDisabled,
+                        ]}>
+                        <Text
+                          style={[
+                            styles.layoutSizeOptionLabel,
+                            selected && styles.selectedLayoutSizeText,
+                          ]}>
+                          {option.label}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.layoutSizeOptionMeta,
+                            selected && styles.selectedLayoutSizeText,
+                          ]}>
+                          {option.meta}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                <PrimaryButton
+                  disabled={Boolean(savingLayoutHabitId)}
+                  onPress={closeLayoutSizeSelector}
+                  title="Done"
+                />
+              </>
             ) : null}
           </View>
         </View>
@@ -1150,13 +1539,17 @@ function AnimatedProgressBar({
 
 type TodayHabitCardProps = {
   habit: Habit;
+  variant: HabitCardVariant;
   completed: boolean;
   skipped: boolean;
+  cardStyle: ViewStyle;
   skipReason?: string | null;
   progress?: HabitProgress;
   crownMilestone: HabitCrownMilestone;
   historyItems: HabitHistoryItem[];
   disabled: boolean;
+  editMode: boolean;
+  selectedForLayout: boolean;
   progressDisabled: boolean;
   skipDisabled: boolean;
   toggleDisabled: boolean;
@@ -1170,13 +1563,17 @@ type TodayHabitCardProps = {
 
 function TodayHabitCard({
   habit,
+  variant,
   completed,
   skipped,
+  cardStyle,
   skipReason,
   progress,
   crownMilestone,
   historyItems,
   disabled,
+  editMode,
+  selectedForLayout,
   progressDisabled,
   skipDisabled,
   toggleDisabled,
@@ -1189,10 +1586,14 @@ function TodayHabitCard({
 }: TodayHabitCardProps) {
   const accentColor = habit.color ?? colors.habitGreen;
   const isProgressHabit = habit.trackingType === 'subtasks' || habit.trackingType === 'numeric';
-  const large = isProgressHabit || (progress?.percent ?? 0) > 0;
+  const tall = variant === 'tall';
+  const wide = variant === 'wide';
+  const large = variant === 'large';
+  const roomy = tall || wide || large;
+  const showProgressBlock = Boolean(progress) && variant !== 'small';
   const statusLabel = completed ? 'Completed' : skipped ? 'Skipped' : 'Remaining';
   const progressPercent = Math.max(0, Math.min(progress?.percent ?? (completed ? 1 : 0), 1));
-  const visibleHistoryItems = large ? historyItems : historyItems.slice(-5);
+  const visibleHistoryItems = roomy ? historyItems : historyItems.slice(-5);
 
   function handleToggle(event: GestureResponderEvent) {
     event.stopPropagation();
@@ -1222,24 +1623,34 @@ function TodayHabitCard({
       onPress={() => onPress(habit.id)}
       style={({ pressed }) => [
         styles.habitCard,
-        large ? styles.largeHabitCard : styles.smallHabitCard,
+        variant === 'small' && styles.smallHabitCard,
+        variant === 'tall' && styles.tallHabitCard,
+        variant === 'wide' && styles.wideHabitCard,
+        variant === 'large' && styles.largeHabitCard,
+        cardStyle,
         completed && styles.completedHabitCard,
         skipped && styles.skippedHabitCard,
+        editMode && styles.layoutEditableHabitCard,
+        selectedForLayout && styles.selectedLayoutHabitCard,
         pressed && styles.pressed,
         disabled && styles.disabledCard,
       ]}>
+      {editMode ? (
+        <View style={styles.layoutSizeBadge}>
+          <Text style={styles.layoutSizeBadgeText}>{getLayoutSizeBadgeLabel(habit)}</Text>
+        </View>
+      ) : null}
+
       <View style={styles.habitCardTop}>
         <View style={styles.habitIconWrap}>
-          <View style={[styles.habitIconTile, { backgroundColor: `${accentColor}22` }]}>
-            <HabitIcon
-              color={accentColor}
-              fallbackIcon={habit.icon}
-              iconLibrary={habit.iconLibrary}
-              iconType={habit.iconType}
-              iconValue={habit.iconValue}
-              size={large ? 38 : 34}
-            />
-          </View>
+          <HabitIcon
+            color={accentColor}
+            fallbackIcon={habit.icon}
+            iconLibrary={habit.iconLibrary}
+            iconType={habit.iconType}
+            iconValue={habit.iconValue}
+            size={48}
+          />
           <View style={styles.crownOverlay}>
             <HabitCrownBadge compact milestone={crownMilestone} />
           </View>
@@ -1279,7 +1690,7 @@ function TodayHabitCard({
       </View>
 
       <View style={styles.habitCardText}>
-        <Text numberOfLines={large ? 2 : 1} style={styles.habitCardName}>
+        <Text numberOfLines={roomy ? 2 : 1} style={styles.habitCardName}>
           {habit.name}
         </Text>
         <Text numberOfLines={1} style={styles.habitCardHint}>
@@ -1287,7 +1698,7 @@ function TodayHabitCard({
         </Text>
       </View>
 
-      {progress ? (
+      {showProgressBlock && progress ? (
         <Pressable
           accessibilityLabel={`Update progress for ${habit.name}`}
           accessibilityRole="button"
@@ -1344,7 +1755,7 @@ function TodayHabitCard({
       </View>
 
       {skipped && skipReason ? (
-        <Text numberOfLines={large ? 2 : 1} style={styles.skipReasonText}>
+        <Text numberOfLines={roomy ? 2 : 1} style={styles.skipReasonText}>
           {skipReason}
         </Text>
       ) : null}
@@ -1453,6 +1864,231 @@ function getHistoryEndDate(selectedDate: string, today: string) {
   return selectedDate > today ? today : selectedDate;
 }
 
+function buildTodayGridItems(habits: Habit[]): TodayGridItem[] {
+  return habits.map((habit) => ({
+    habit,
+    variant: getHabitCardVariant(habit),
+  }));
+}
+
+function buildTodayGridLayout(items: TodayGridItem[]): TodayGridLayout {
+  const placedLayout = placeTodayGridItems(items);
+  const finalRowOccupancy = getRowOccupancy(placedLayout.placements, placedLayout.rowCount - 1);
+  const lonelyFinalSmall = placedLayout.placements.find(
+    (placement) =>
+      placement.row === placedLayout.rowCount - 1 &&
+      placement.item.variant === 'small' &&
+      finalRowOccupancy === 1
+  );
+
+  if (!lonelyFinalSmall) {
+    return placedLayout;
+  }
+
+  return placeTodayGridItems(
+    items.map((item) =>
+      item.habit.id === lonelyFinalSmall.item.habit.id ? { ...item, variant: 'wide' } : item
+    )
+  );
+}
+
+function placeTodayGridItems(items: TodayGridItem[]): TodayGridLayout {
+  const occupiedCells = new Set<string>();
+  const placements: TodayGridPlacement[] = [];
+  let rowCount = 0;
+
+  for (const item of items) {
+    const { colSpan, rowSpan } = getGridSpan(item.variant);
+    const placement = findNextGridPlacement(occupiedCells, colSpan, rowSpan);
+
+    occupyGridCells(occupiedCells, placement.column, placement.row, colSpan, rowSpan);
+    placements.push({
+      item,
+      colSpan,
+      rowSpan,
+      ...placement,
+    });
+    rowCount = Math.max(rowCount, placement.row + rowSpan);
+  }
+
+  return { placements, rowCount };
+}
+
+function findNextGridPlacement(
+  occupiedCells: Set<string>,
+  colSpan: 1 | 2,
+  rowSpan: 1 | 2
+): { column: 0 | 1; row: number } {
+  for (let row = 0; ; row += 1) {
+    const maxColumn = colSpan === 2 ? 0 : 1;
+
+    for (let column = 0; column <= maxColumn; column += 1) {
+      if (canPlaceGridItem(occupiedCells, column as 0 | 1, row, colSpan, rowSpan)) {
+        return { column: column as 0 | 1, row };
+      }
+    }
+  }
+}
+
+function canPlaceGridItem(
+  occupiedCells: Set<string>,
+  column: 0 | 1,
+  row: number,
+  colSpan: 1 | 2,
+  rowSpan: 1 | 2
+) {
+  if (column + colSpan > 2) {
+    return false;
+  }
+
+  for (let rowOffset = 0; rowOffset < rowSpan; rowOffset += 1) {
+    for (let columnOffset = 0; columnOffset < colSpan; columnOffset += 1) {
+      if (occupiedCells.has(getGridCellKey(column + columnOffset, row + rowOffset))) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+function occupyGridCells(
+  occupiedCells: Set<string>,
+  column: 0 | 1,
+  row: number,
+  colSpan: 1 | 2,
+  rowSpan: 1 | 2
+) {
+  for (let rowOffset = 0; rowOffset < rowSpan; rowOffset += 1) {
+    for (let columnOffset = 0; columnOffset < colSpan; columnOffset += 1) {
+      occupiedCells.add(getGridCellKey(column + columnOffset, row + rowOffset));
+    }
+  }
+}
+
+function getGridCellKey(column: number, row: number) {
+  return `${column}:${row}`;
+}
+
+function getGridSpan(variant: HabitCardVariant): { colSpan: 1 | 2; rowSpan: 1 | 2 } {
+  if (variant === 'tall') {
+    return { colSpan: 1, rowSpan: 2 };
+  }
+
+  if (variant === 'wide') {
+    return { colSpan: 2, rowSpan: 1 };
+  }
+
+  if (variant === 'large') {
+    return { colSpan: 2, rowSpan: 2 };
+  }
+
+  return { colSpan: 1, rowSpan: 1 };
+}
+
+function getRowOccupancy(placements: TodayGridPlacement[], row: number) {
+  return placements.reduce((count, placement) => {
+    const placementEndsAfterRow = placement.row + placement.rowSpan > row;
+
+    if (placement.row <= row && placementEndsAfterRow) {
+      return count + placement.colSpan;
+    }
+
+    return count;
+  }, 0);
+}
+
+function getTodayGridHeight(rowCount: number, metrics: TodayGridMetrics) {
+  if (rowCount <= 0) {
+    return 0;
+  }
+
+  return rowCount * metrics.cellSize + (rowCount - 1) * metrics.gap;
+}
+
+function getHabitCardVariant(habit: Habit): HabitCardVariant {
+  if (habit.todayLayoutSize !== 'auto') {
+    return habit.todayLayoutSize;
+  }
+
+  if (habit.trackingType === 'numeric') {
+    return 'tall';
+  }
+
+  return 'small';
+}
+
+function getHabitCardGeometryStyle(
+  variant: HabitCardVariant,
+  metrics: TodayGridMetrics
+): ViewStyle {
+  if (variant === 'tall') {
+    return {
+      width: metrics.cellSize,
+      height: metrics.cellSize * 2 + metrics.gap,
+    };
+  }
+
+  if (variant === 'wide') {
+    return {
+      width: metrics.fullWidth,
+      height: metrics.cellSize,
+    };
+  }
+
+  if (variant === 'large') {
+    return {
+      width: metrics.fullWidth,
+      height: metrics.cellSize * 2 + metrics.gap,
+    };
+  }
+
+  return {
+    width: metrics.cellSize,
+    height: metrics.cellSize,
+  };
+}
+
+function getLayoutSortedHabits(habits: Habit[]) {
+  const hasCustomOrder = habits.some((habit) => habit.todayLayoutOrder !== 0);
+
+  if (!hasCustomOrder) {
+    return habits;
+  }
+
+  return [...habits].sort((first, second) => {
+    const orderDifference = first.todayLayoutOrder - second.todayLayoutOrder;
+
+    if (orderDifference !== 0) {
+      return orderDifference;
+    }
+
+    return first.name.localeCompare(second.name);
+  });
+}
+
+function getLayoutSizeBadgeLabel(habit: Habit) {
+  const size = habit.todayLayoutSize === 'auto' ? getHabitCardVariant(habit) : habit.todayLayoutSize;
+
+  if (habit.todayLayoutSize === 'auto') {
+    return 'Auto';
+  }
+
+  if (size === 'tall') {
+    return '1x2';
+  }
+
+  if (size === 'wide') {
+    return '2x1';
+  }
+
+  if (size === 'large') {
+    return '2x2';
+  }
+
+  return '1x1';
+}
+
 function formatProgressNumber(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
@@ -1471,7 +2107,7 @@ function getMotivationLine(completionPercent: number) {
   }
 
   if (completionPercent > 0) {
-    return 'Keep going.';
+    return 'Keep going!';
   }
 
   return 'Start with one small step.';
@@ -1888,17 +2524,63 @@ const styles = StyleSheet.create({
     color: colors.textSubtle,
     ...typography.caption,
   },
+  sectionHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  layoutEditButton: {
+    minHeight: 32,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceElevated,
+  },
+  activeLayoutEditButton: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  layoutEditButtonText: {
+    color: colors.textMuted,
+    ...typography.small,
+    fontWeight: '900',
+  },
+  activeLayoutEditButtonText: {
+    color: colors.background,
+  },
+  layoutEditBanner: {
+    gap: spacing.xs,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: radius.lg,
+    backgroundColor: colors.primaryMuted,
+  },
+  layoutEditTitle: {
+    color: colors.primary,
+    ...typography.caption,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  layoutEditText: {
+    color: colors.text,
+    ...typography.caption,
+    fontWeight: '700',
+  },
   habitList: {
     gap: spacing.md,
   },
   habitGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.md,
+    position: 'relative',
+    alignSelf: 'center',
+  },
+  gridPlacedItem: {
+    position: 'absolute',
   },
   habitCard: {
     position: 'relative',
-    minHeight: 152,
     gap: spacing.sm,
     overflow: 'hidden',
     padding: spacing.md,
@@ -1907,13 +2589,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     backgroundColor: colors.surface,
   },
-  smallHabitCard: {
-    width: '47.8%',
-  },
-  largeHabitCard: {
-    width: '47.8%',
-    minHeight: 178,
-  },
+  smallHabitCard: {},
+  tallHabitCard: {},
+  wideHabitCard: {},
+  largeHabitCard: {},
   completedHabitCard: {
     borderColor: colors.border,
     backgroundColor: colors.surfaceElevated,
@@ -1924,6 +2603,27 @@ const styles = StyleSheet.create({
   disabledCard: {
     opacity: 0.52,
   },
+  layoutEditableHabitCard: {
+    borderStyle: 'dashed',
+  },
+  selectedLayoutHabitCard: {
+    borderColor: colors.primary,
+  },
+  layoutSizeBadge: {
+    position: 'absolute',
+    right: spacing.sm,
+    bottom: spacing.sm,
+    zIndex: 2,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primary,
+  },
+  layoutSizeBadgeText: {
+    color: colors.background,
+    ...typography.small,
+    fontWeight: '900',
+  },
   habitCardTop: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1932,13 +2632,6 @@ const styles = StyleSheet.create({
   },
   habitIconWrap: {
     position: 'relative',
-  },
-  habitIconTile: {
-    width: 52,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.lg,
   },
   crownOverlay: {
     position: 'absolute',
@@ -1963,8 +2656,8 @@ const styles = StyleSheet.create({
     opacity: 0.42,
   },
   progressCircle: {
-    width: 48,
-    height: 48,
+    width: 46,
+    height: 46,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
@@ -2330,5 +3023,65 @@ const styles = StyleSheet.create({
   },
   modalActions: {
     gap: spacing.md,
+  },
+  layoutMoveRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  layoutMoveButton: {
+    flex: 1,
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceElevated,
+  },
+  disabledLayoutMoveButton: {
+    opacity: 0.45,
+  },
+  layoutMoveButtonText: {
+    color: colors.text,
+    ...typography.caption,
+    fontWeight: '900',
+  },
+  disabledLayoutMoveButtonText: {
+    color: colors.textSubtle,
+  },
+  layoutSizeGrid: {
+    gap: spacing.sm,
+  },
+  layoutSizeOption: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceElevated,
+  },
+  selectedLayoutSizeOption: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryMuted,
+  },
+  layoutSizeOptionLabel: {
+    color: colors.text,
+    ...typography.caption,
+    fontWeight: '900',
+  },
+  layoutSizeOptionMeta: {
+    color: colors.textMuted,
+    ...typography.small,
+    fontWeight: '900',
+  },
+  selectedLayoutSizeText: {
+    color: colors.primary,
   },
 });

@@ -1,6 +1,7 @@
 import { getDatabase } from '@/src/db/database';
 import type {
   Habit,
+  HabitCardLayoutSize,
   HabitCompletion,
   HabitIconType,
   HabitNumericEntry,
@@ -120,10 +121,12 @@ export async function replaceAllDataWithImportedData(data: ImportedLocalData): P
           tracking_type,
           target_value,
           target_unit,
+          today_layout_size,
+          today_layout_order,
           archived,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         [
           habit.id,
           habit.name,
@@ -143,6 +146,8 @@ export async function replaceAllDataWithImportedData(data: ImportedLocalData): P
           habit.trackingType,
           habit.targetValue,
           habit.targetUnit,
+          habit.todayLayoutSize,
+          habit.todayLayoutOrder,
           habit.archived ? 1 : 0,
           habit.createdAt,
           habit.updatedAt,
@@ -259,6 +264,8 @@ function parseHabit(value: unknown): Habit {
     trackingType: parseTrackingType(row.trackingType),
     targetValue: optionalPositiveNumber(row.targetValue),
     targetUnit: optionalString(row.targetUnit),
+    todayLayoutSize: parseTodayLayoutSize(row.todayLayoutSize),
+    todayLayoutOrder: optionalInteger(row.todayLayoutOrder),
     archived: optionalBoolean(row.archived),
     createdAt: optionalString(row.createdAt) ?? now,
     updatedAt: optionalString(row.updatedAt) ?? now,
@@ -380,6 +387,12 @@ function parseTrackingType(value: unknown): HabitTrackingType {
   return value === 'subtasks' || value === 'numeric' ? value : 'checkbox';
 }
 
+function parseTodayLayoutSize(value: unknown): HabitCardLayoutSize {
+  return value === 'small' || value === 'tall' || value === 'wide' || value === 'large'
+    ? value
+    : 'auto';
+}
+
 function parseWeekdays(value: unknown): number[] | null {
   if (!Array.isArray(value)) {
     return null;
@@ -394,6 +407,10 @@ function parseWeekdays(value: unknown): number[] | null {
 
 function optionalPositiveInteger(value: unknown): number | null {
   return Number.isInteger(value) && Number(value) > 0 ? Number(value) : null;
+}
+
+function optionalInteger(value: unknown): number {
+  return Number.isInteger(value) ? Number(value) : 0;
 }
 
 function optionalPositiveNumber(value: unknown): number | null {

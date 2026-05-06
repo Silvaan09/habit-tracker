@@ -85,6 +85,14 @@ async function ensureHabitColumns(db: SQLiteDatabase) {
     },
     { name: 'target_value', sql: 'ALTER TABLE habits ADD COLUMN target_value REAL;' },
     { name: 'target_unit', sql: 'ALTER TABLE habits ADD COLUMN target_unit TEXT;' },
+    {
+      name: 'today_layout_size',
+      sql: "ALTER TABLE habits ADD COLUMN today_layout_size TEXT NOT NULL DEFAULT 'auto';",
+    },
+    {
+      name: 'today_layout_order',
+      sql: 'ALTER TABLE habits ADD COLUMN today_layout_order INTEGER NOT NULL DEFAULT 0;',
+    },
   ];
 
   for (const migration of migrations) {

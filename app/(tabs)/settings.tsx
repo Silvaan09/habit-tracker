@@ -70,10 +70,9 @@ export default function SettingsScreen() {
         title: 'Habit Tracker export',
         message: exportJson,
       });
-      setMessage('Your local data export is ready to share or save.');
     } catch (error) {
       console.error('Failed to export local data', error);
-      setMessage('Could not export local data. Please try again.');
+      setMessage('Could not back up your data. Please try again.');
     } finally {
       setExporting(false);
     }
@@ -202,30 +201,30 @@ export default function SettingsScreen() {
         <View style={styles.sectionHeader}>
           <View>
             <Text style={styles.sectionEyebrow}>Data</Text>
-            <Text style={styles.cardTitle}>Local data</Text>
+            <Text style={styles.cardTitle}>Your data</Text>
           </View>
         </View>
         <Text style={styles.bodyText}>
-          Your habits, completions, and skips stay on this device. Export creates a local JSON
-          snapshot; reset deletes local habit data after confirmation.
+          Your habits are saved on this phone. You can make a backup, restore a backup, or delete
+          everything.
         </Text>
         <View style={styles.actions}>
           <PrimaryButton
             disabled={exporting || importing || resetting}
             onPress={handleExportData}
-            title={exporting ? 'Preparing export...' : 'Export local data'}
+            title={exporting ? 'Preparing backup...' : 'Back up data'}
             variant="secondary"
           />
           <PrimaryButton
             disabled={exporting || importing || resetting}
             onPress={openImportModal}
-            title={importing ? 'Importing...' : 'Import local data'}
+            title={importing ? 'Restoring...' : 'Restore backup'}
             variant="secondary"
           />
           <PrimaryButton
             disabled={exporting || importing || resetting}
             onPress={confirmResetAllData}
-            title={resetting ? 'Resetting...' : 'Reset all data'}
+            title={resetting ? 'Deleting...' : 'Delete all data'}
             variant="danger"
           />
         </View>
@@ -244,15 +243,15 @@ export default function SettingsScreen() {
           <View style={styles.importModalCard}>
             <View style={styles.sectionHeader}>
               <View>
-                <Text style={styles.sectionEyebrow}>Import</Text>
-                <Text style={styles.cardTitle}>Paste export JSON</Text>
+                <Text style={styles.sectionEyebrow}>Restore</Text>
+                <Text style={styles.cardTitle}>Paste backup text</Text>
               </View>
             </View>
             <Text style={styles.bodyText}>
-              Replace mode only. The JSON is validated before anything is written.
+              This replaces the habits currently on this phone with the backup you paste here.
             </Text>
             <TextInput
-              accessibilityLabel="Paste exported JSON"
+              accessibilityLabel="Paste backup text"
               autoCapitalize="none"
               autoCorrect={false}
               editable={!importing}
@@ -261,7 +260,7 @@ export default function SettingsScreen() {
                 setImportJsonText(value);
                 setImportErrorMessage(null);
               }}
-              placeholder="Paste your exported JSON here"
+              placeholder="Paste your backup text here"
               placeholderTextColor={colors.textSubtle}
               style={styles.importInput}
               value={importJsonText}
@@ -291,25 +290,18 @@ export default function SettingsScreen() {
         <View style={styles.sectionHeader}>
           <View>
             <Text style={styles.sectionEyebrow}>About</Text>
-            <Text style={styles.cardTitle}>Habit Tracker</Text>
+            <Text style={styles.cardTitle}>About Habito</Text>
           </View>
         </View>
-        <View style={styles.aboutList}>
-          <View style={styles.aboutRow}>
-            <Text style={styles.aboutLabel}>App</Text>
-            <Text style={styles.aboutValue}>A local-first habit tracker.</Text>
-          </View>
-          <View style={styles.aboutRow}>
-            <Text style={styles.aboutLabel}>Privacy</Text>
-            <Text style={styles.aboutValue}>
-              Your habits are stored on this device unless you export them.
-            </Text>
-          </View>
-          <View style={styles.aboutRow}>
-            <Text style={styles.aboutLabel}>Reminders</Text>
-            <Text style={styles.aboutValue}>Scheduled locally with device notifications.</Text>
-          </View>
-        </View>
+        <Text style={styles.bodyText}>
+          Habito is a private, local-first habit tracker built to help you plan your day, track
+          progress, and stay consistent. Your habit data stays on this device unless you choose to
+          export it.
+        </Text>
+        <Text style={styles.aboutNote}>
+          Built for flexible routines, skips, subtasks, numeric goals, reminders, and visual
+          progress tracking.
+        </Text>
       </View>
     </Screen>
   );
@@ -318,7 +310,7 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   content: {
     gap: spacing.xl,
-    paddingBottom: spacing.xxl,
+    paddingBottom: 156,
   },
   header: {
     gap: spacing.sm,
@@ -418,21 +410,7 @@ const styles = StyleSheet.create({
     ...typography.caption,
     fontWeight: '700',
   },
-  aboutList: {
-    gap: spacing.md,
-  },
-  aboutRow: {
-    gap: spacing.xs,
-    paddingBottom: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  aboutLabel: {
-    color: colors.text,
-    ...typography.caption,
-    fontWeight: '900',
-  },
-  aboutValue: {
+  aboutNote: {
     color: colors.textMuted,
     ...typography.caption,
   },

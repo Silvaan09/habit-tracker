@@ -1,6 +1,7 @@
 import { createLocalId, getDatabase } from '@/src/db/database';
 import type {
   Habit,
+  HabitCardLayoutSize,
   HabitIconType,
   HabitScheduleType,
   HabitTrackingType,
@@ -26,6 +27,8 @@ type HabitRow = {
   tracking_type: string | null;
   target_value: number | null;
   target_unit: string | null;
+  today_layout_size: string | null;
+  today_layout_order: number | null;
   archived: number;
   created_at: string;
   updated_at: string;
@@ -49,6 +52,8 @@ export type CreateHabitInput = {
   trackingType?: HabitTrackingType;
   targetValue?: number | null;
   targetUnit?: string | null;
+  todayLayoutSize?: HabitCardLayoutSize;
+  todayLayoutOrder?: number;
 };
 
 export type UpdateHabitInput = Partial<CreateHabitInput>;
@@ -81,6 +86,8 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
     trackingType: input.trackingType ?? 'checkbox',
     targetValue: normalizeTargetValue(input.targetValue),
     targetUnit: input.targetUnit?.trim() || null,
+    todayLayoutSize: normalizeTodayLayoutSize(input.todayLayoutSize),
+    todayLayoutOrder: normalizeTodayLayoutOrder(input.todayLayoutOrder),
     archived: false,
     createdAt: now,
     updatedAt: now,
@@ -106,10 +113,12 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
       tracking_type,
       target_value,
       target_unit,
+      today_layout_size,
+      today_layout_order,
       archived,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       habit.id,
       habit.name,
@@ -129,6 +138,8 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
       habit.trackingType,
       habit.targetValue,
       habit.targetUnit,
+      habit.todayLayoutSize,
+      habit.todayLayoutOrder,
       habit.archived ? 1 : 0,
       habit.createdAt,
       habit.updatedAt,
@@ -160,6 +171,8 @@ export async function getActiveHabits(): Promise<Habit[]> {
       tracking_type,
       target_value,
       target_unit,
+      today_layout_size,
+      today_layout_order,
       archived,
       created_at,
       updated_at
@@ -193,6 +206,8 @@ export async function getAllHabits(): Promise<Habit[]> {
       tracking_type,
       target_value,
       target_unit,
+      today_layout_size,
+      today_layout_order,
       archived,
       created_at,
       updated_at
@@ -225,6 +240,8 @@ export async function getHabitById(id: string): Promise<Habit | null> {
       tracking_type,
       target_value,
       target_unit,
+      today_layout_size,
+      today_layout_order,
       archived,
       created_at,
       updated_at
@@ -333,10 +350,52 @@ export async function updateHabit(id: string, input: UpdateHabitInput): Promise<
     params.push(input.targetUnit?.trim() || null);
   }
 
+  if (input.todayLayoutSize !== undefined) {
+    updates.push('today_layout_size = ?');
+    params.push(normalizeTodayLayoutSize(input.todayLayoutSize));
+  }
+
+  if (input.todayLayoutOrder !== undefined) {
+    updates.push('today_layout_order = ?');
+    params.push(normalizeTodayLayoutOrder(input.todayLayoutOrder));
+  }
+
   updates.push('updated_at = ?');
   params.push(new Date().toISOString(), id);
 
   await db.runAsync(`UPDATE habits SET ${updates.join(', ')} WHERE id = ?;`, params);
+}
+
+export async function updateHabitLayout(
+  habitId: string,
+  input: {
+    todayLayoutSize?: HabitCardLayoutSize;
+    todayLayoutOrder?: number;
+  }
+): Promise<void> {
+  await updateHabit(habitId, input);
+}
+
+export async function updateHabitLayoutOrder(
+  habitOrders: { habitId: string; order: number }[]
+): Promise<void> {
+  if (habitOrders.length === 0) {
+    return;
+  }
+
+  const db = await getDatabase();
+  const updatedAt = new Date().toISOString();
+
+  await db.withTransactionAsync(async () => {
+    for (const habitOrder of habitOrders) {
+      await db.runAsync(
+        'UPDATE habits SET today_layout_order = ?, updated_at = ? WHERE id = ?;',
+        normalizeTodayLayoutOrder(habitOrder.order),
+        updatedAt,
+        habitOrder.habitId
+      );
+    }
+  });
 }
 
 export async function updateHabitNotificationId(
@@ -348,6 +407,28 @@ export async function updateHabitNotificationId(
   await db.runAsync(
     'UPDATE habits SET notification_id = ?, updated_at = ? WHERE id = ?;',
     notificationId,
+    new Date().toISOString(),
+    habitId
+  );
+}
+
+export async function updateHabitReminder(
+  habitId: string,
+  input: {
+    reminderEnabled: boolean;
+    reminderTime: string | null;
+    notificationId: string | null;
+  }
+): Promise<void> {
+  const db = await getDatabase();
+
+  await db.runAsync(
+    `UPDATE habits
+     SET reminder_enabled = ?, reminder_time = ?, notification_id = ?, updated_at = ?
+     WHERE id = ?;`,
+    input.reminderEnabled ? 1 : 0,
+    input.reminderTime,
+    input.notificationId,
     new Date().toISOString(),
     habitId
   );
@@ -389,6 +470,8 @@ function mapHabitRow(row: HabitRow): Habit {
     trackingType: normalizeTrackingType(row.tracking_type),
     targetValue: normalizeTargetValue(row.target_value),
     targetUnit: row.target_unit,
+    todayLayoutSize: normalizeTodayLayoutSize(row.today_layout_size),
+    todayLayoutOrder: normalizeTodayLayoutOrder(row.today_layout_order),
     archived: Boolean(row.archived),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -455,6 +538,25 @@ function normalizeTrackingType(trackingType: string | null): HabitTrackingType {
   }
 
   return 'checkbox';
+}
+
+function normalizeTodayLayoutSize(
+  layoutSize: HabitCardLayoutSize | string | null | undefined
+): HabitCardLayoutSize {
+  if (
+    layoutSize === 'small' ||
+    layoutSize === 'tall' ||
+    layoutSize === 'wide' ||
+    layoutSize === 'large'
+  ) {
+    return layoutSize;
+  }
+
+  return 'auto';
+}
+
+function normalizeTodayLayoutOrder(order: number | null | undefined) {
+  return Number.isInteger(order) ? Number(order) : 0;
 }
 
 function normalizeTargetValue(targetValue: number | null | undefined) {

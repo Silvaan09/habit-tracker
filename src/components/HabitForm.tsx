@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { HabitIcon } from '@/src/components/HabitIcon';
 import {
@@ -8,13 +8,13 @@ import {
 } from '@/src/components/IconPicker';
 import { DEFAULT_LUCIDE_HABIT_ICON, LucideCheck } from '@/src/components/lucideHabitIcons';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
+import { ReminderTimePicker } from '@/src/components/ReminderTimePicker';
 import { TextInputField } from '@/src/components/TextInputField';
 import { colors, radius, spacing, typography } from '@/src/theme';
 import type { HabitIconType, HabitScheduleType, HabitTrackingType } from '@/src/types/Habit';
 import { getTodayDateString } from '@/src/utils/dates';
 import {
   isValidReminderTime,
-  parseReminderTime,
   REMINDER_TIME_VALIDATION_MESSAGE,
 } from '@/src/utils/reminders';
 
@@ -72,8 +72,6 @@ const WEEKDAY_OPTIONS = [
   { label: 'Sat', value: 6 },
   { label: 'Sun', value: 7 },
 ];
-const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => hour);
-const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, minute) => minute);
 const DEFAULT_HABIT_ICON = DEFAULT_LUCIDE_HABIT_ICON;
 
 export function HabitForm({
@@ -85,7 +83,6 @@ export function HabitForm({
   onCancel,
 }: HabitFormProps) {
   const initialReminderTime = initialValues?.reminderTime ?? '';
-  const initialParsedReminderTime = parseReminderTime(initialReminderTime);
   const [name, setName] = useState(initialValues?.name ?? '');
   const [description, setDescription] = useState(initialValues?.description ?? '');
   const [selectedIcon, setSelectedIcon] = useState<HabitIconSelection>(() => ({
@@ -100,14 +97,7 @@ export function HabitForm({
   const [color, setColor] = useState(initialValues?.color ?? COLOR_OPTIONS[0]);
   const [reminderEnabled, setReminderEnabled] = useState(initialValues?.reminderEnabled ?? false);
   const [reminderTime, setReminderTime] = useState(
-    initialValues?.reminderEnabled && !initialParsedReminderTime ? '08:00' : initialReminderTime
-  );
-  const [timeSelectorVisible, setTimeSelectorVisible] = useState(false);
-  const [draftReminderHour, setDraftReminderHour] = useState(
-    initialParsedReminderTime?.hour ?? 8
-  );
-  const [draftReminderMinute, setDraftReminderMinute] = useState(
-    initialParsedReminderTime?.minute ?? 0
+    initialValues?.reminderEnabled && !initialReminderTime ? '08:00' : initialReminderTime
   );
   const [scheduleType, setScheduleType] = useState<HabitScheduleType>(
     initialValues?.scheduleType ?? 'daily'
@@ -218,8 +208,6 @@ export function HabitForm({
 
       if (nextValue && !isValidReminderTime(reminderTime)) {
         setReminderTime('08:00');
-        setDraftReminderHour(8);
-        setDraftReminderMinute(0);
       }
 
       return nextValue;
@@ -229,26 +217,9 @@ export function HabitForm({
   function handleReminderSwitch(value: boolean) {
     if (value && !isValidReminderTime(reminderTime)) {
       setReminderTime('08:00');
-      setDraftReminderHour(8);
-      setDraftReminderMinute(0);
     }
 
     setReminderEnabled(value);
-  }
-
-  function openTimeSelector() {
-    const parsedTime = parseReminderTime(reminderTime);
-
-    setDraftReminderHour(parsedTime?.hour ?? 8);
-    setDraftReminderMinute(parsedTime?.minute ?? 0);
-    setReminderTimeValidationMessage(null);
-    setTimeSelectorVisible(true);
-  }
-
-  function saveReminderTime() {
-    setReminderTime(`${padTimePart(draftReminderHour)}:${padTimePart(draftReminderMinute)}`);
-    setReminderTimeValidationMessage(null);
-    setTimeSelectorVisible(false);
   }
 
   function updateSubtaskTitle(index: number, value: string) {
@@ -674,29 +645,19 @@ export function HabitForm({
         </Pressable>
 
         {reminderEnabled ? (
-          <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Reminder time</Text>
-            <Text style={styles.helperText}>Choose a local daily reminder time.</Text>
-            <Pressable
-              accessibilityLabel="Open reminder time selector"
-              accessibilityRole="button"
+          <>
+            <ReminderTimePicker
               disabled={saving}
-              onPress={openTimeSelector}
-              style={({ pressed }) => [
-                styles.timeSelectorButton,
-                pressed && styles.pressed,
-                saving && styles.disabled,
-              ]}>
-              <View>
-                <Text style={styles.timeSelectorLabel}>Selected time</Text>
-                <Text style={styles.timeSelectorValue}>{reminderTime || '08:00'}</Text>
-              </View>
-              <Text style={styles.timeSelectorAction}>Change</Text>
-            </Pressable>
+              onChange={(value) => {
+                setReminderTime(value);
+                setReminderTimeValidationMessage(null);
+              }}
+              value={reminderTime || '08:00'}
+            />
             {reminderTimeValidationMessage ? (
               <Text style={styles.scheduleError}>{reminderTimeValidationMessage}</Text>
             ) : null}
-          </View>
+          </>
         ) : (
           <View style={styles.disabledReminderTime}>
             <Text style={styles.disabledReminderLabel}>Reminder time</Text>
@@ -748,91 +709,6 @@ export function HabitForm({
         selected={selectedIcon}
         visible={pickerVisible}
       />
-
-      <Modal
-        animationType="slide"
-        onRequestClose={() => setTimeSelectorVisible(false)}
-        transparent
-        visible={timeSelectorVisible}>
-        <View style={styles.timeModalBackdrop}>
-          <View style={styles.timeModalCard}>
-            <View style={styles.timeModalHeader}>
-              <Text style={styles.sectionEyebrow}>Reminder time</Text>
-              <Text style={styles.timeModalTitle}>
-                {padTimePart(draftReminderHour)}:{padTimePart(draftReminderMinute)}
-              </Text>
-              <Text style={styles.helperText}>Pick an hour and minute. Times are stored as HH:mm.</Text>
-            </View>
-
-            <View style={styles.timeColumns}>
-              <View style={styles.timeColumn}>
-                <Text style={styles.label}>Hour</Text>
-                <ScrollView
-                  style={styles.timeOptionsScroll}
-                  contentContainerStyle={styles.timeOptionGrid}>
-                  {HOUR_OPTIONS.map((hour) => (
-                    <Pressable
-                      accessibilityLabel={`Select hour ${padTimePart(hour)}`}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: draftReminderHour === hour }}
-                      key={hour}
-                      onPress={() => setDraftReminderHour(hour)}
-                      style={[
-                        styles.timeOption,
-                        draftReminderHour === hour && styles.selectedTimeOption,
-                      ]}>
-                      <Text
-                        style={[
-                          styles.timeOptionText,
-                          draftReminderHour === hour && styles.selectedTimeOptionText,
-                        ]}>
-                        {padTimePart(hour)}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </View>
-
-              <View style={styles.timeColumn}>
-                <Text style={styles.label}>Minute</Text>
-                <ScrollView
-                  style={styles.timeOptionsScroll}
-                  contentContainerStyle={styles.timeOptionGrid}>
-                  {MINUTE_OPTIONS.map((minute) => (
-                    <Pressable
-                      accessibilityLabel={`Select minute ${padTimePart(minute)}`}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: draftReminderMinute === minute }}
-                      key={minute}
-                      onPress={() => setDraftReminderMinute(minute)}
-                      style={[
-                        styles.timeOption,
-                        draftReminderMinute === minute && styles.selectedTimeOption,
-                      ]}>
-                      <Text
-                        style={[
-                          styles.timeOptionText,
-                          draftReminderMinute === minute && styles.selectedTimeOptionText,
-                        ]}>
-                        {padTimePart(minute)}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </View>
-            </View>
-
-            <View style={styles.timeModalActions}>
-              <PrimaryButton
-                onPress={() => setTimeSelectorVisible(false)}
-                title="Cancel"
-                variant="secondary"
-              />
-              <PrimaryButton onPress={saveReminderTime} title="Save time" />
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -927,10 +803,6 @@ function getSchedulePreview(
 
 function isDateString(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
-}
-
-function padTimePart(value: number) {
-  return String(value).padStart(2, '0');
 }
 
 const styles = StyleSheet.create({
