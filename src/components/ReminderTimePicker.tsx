@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { BottomSheetModal } from '@/src/components/BottomSheetModal';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { colors, radius, spacing, typography } from '@/src/theme';
 import {
@@ -66,88 +67,83 @@ export function ReminderTimePicker({
         <Text style={styles.timeSelectorAction}>Change</Text>
       </Pressable>
 
-      <Modal
-        animationType="slide"
+      <BottomSheetModal
         onRequestClose={() => setVisible(false)}
-        transparent
+        sheetStyle={styles.timeModalCard}
         visible={visible}>
-        <View style={styles.timeModalBackdrop}>
-          <View style={styles.timeModalCard}>
-            <View style={styles.timeModalHeader}>
-              <Text style={styles.sectionEyebrow}>Reminder time</Text>
-              <Text style={styles.timeModalTitle}>
-                {formatReminderTime(draftHour, draftMinute)}
-              </Text>
-              <Text style={styles.helperText}>Minutes are shown in 5-minute steps.</Text>
-            </View>
+        <View style={styles.timeModalHeader}>
+          <Text style={styles.sectionEyebrow}>Reminder time</Text>
+          <Text style={styles.timeModalTitle}>
+            {formatReminderTime(draftHour, draftMinute)}
+          </Text>
+          <Text style={styles.helperText}>Minutes are shown in 5-minute steps.</Text>
+        </View>
 
-            <View style={styles.timeColumns}>
-              <View style={[styles.timeColumn, styles.hourColumn]}>
-                <Text style={styles.label}>Hour</Text>
-                <ScrollView
-                  style={styles.timeOptionsScroll}
-                  contentContainerStyle={styles.timeOptionGrid}>
-                  {HOUR_OPTIONS.map((hour) => (
-                    <Pressable
-                      accessibilityLabel={`Select hour ${padReminderTimePart(hour)}`}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: draftHour === hour }}
-                      key={hour}
-                      onPress={() => setDraftHour(hour)}
-                      style={[
-                        styles.timeOption,
-                        styles.hourTimeOption,
-                        draftHour === hour && styles.selectedTimeOption,
-                      ]}>
-                      <Text
-                        style={[
-                          styles.timeOptionText,
-                          draftHour === hour && styles.selectedTimeOptionText,
-                        ]}>
-                        {padReminderTimePart(hour)}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </View>
+        <View style={styles.timeColumns}>
+          <View style={[styles.timeColumn, styles.hourColumn]}>
+            <Text style={styles.label}>Hour</Text>
+            <ScrollView
+              style={styles.timeOptionsScroll}
+              contentContainerStyle={styles.timeOptionGrid}>
+              {HOUR_OPTIONS.map((hour) => (
+                <Pressable
+                  accessibilityLabel={`Select hour ${padReminderTimePart(hour)}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: draftHour === hour }}
+                  key={hour}
+                  onPress={() => setDraftHour(hour)}
+                  style={[
+                    styles.timeOption,
+                    styles.hourTimeOption,
+                    draftHour === hour && styles.selectedTimeOption,
+                  ]}>
+                  <Text
+                    style={[
+                      styles.timeOptionText,
+                      draftHour === hour && styles.selectedTimeOptionText,
+                    ]}>
+                    {padReminderTimePart(hour)}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
 
-              <View style={[styles.timeColumn, styles.minuteColumn]}>
-                <Text style={styles.label}>Minute</Text>
-                <ScrollView
-                  style={styles.timeOptionsScroll}
-                  contentContainerStyle={styles.timeOptionGrid}>
-                  {REMINDER_MINUTE_OPTIONS.map((minute) => (
-                    <Pressable
-                      accessibilityLabel={`Select minute ${padReminderTimePart(minute)}`}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: draftMinute === minute }}
-                      key={minute}
-                      onPress={() => setDraftMinute(minute)}
-                      style={[
-                        styles.timeOption,
-                        styles.minuteTimeOption,
-                        draftMinute === minute && styles.selectedTimeOption,
-                      ]}>
-                      <Text
-                        style={[
-                          styles.timeOptionText,
-                          draftMinute === minute && styles.selectedTimeOptionText,
-                        ]}>
-                        {padReminderTimePart(minute)}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </View>
-            </View>
-
-            <View style={styles.timeModalActions}>
-              <PrimaryButton onPress={() => setVisible(false)} title="Cancel" variant="secondary" />
-              <PrimaryButton onPress={saveTime} title="Save time" />
-            </View>
+          <View style={[styles.timeColumn, styles.minuteColumn]}>
+            <Text style={styles.label}>Minute</Text>
+            <ScrollView
+              style={styles.timeOptionsScroll}
+              contentContainerStyle={styles.timeOptionGrid}>
+              {REMINDER_MINUTE_OPTIONS.map((minute) => (
+                <Pressable
+                  accessibilityLabel={`Select minute ${padReminderTimePart(minute)}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: draftMinute === minute }}
+                  key={minute}
+                  onPress={() => setDraftMinute(minute)}
+                  style={[
+                    styles.timeOption,
+                    styles.minuteTimeOption,
+                    draftMinute === minute && styles.selectedTimeOption,
+                  ]}>
+                  <Text
+                    style={[
+                      styles.timeOptionText,
+                      draftMinute === minute && styles.selectedTimeOptionText,
+                    ]}>
+                    {padReminderTimePart(minute)}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
           </View>
         </View>
-      </Modal>
+
+        <View style={styles.timeModalActions}>
+          <PrimaryButton onPress={() => setVisible(false)} title="Cancel" variant="secondary" />
+          <PrimaryButton onPress={saveTime} title="Save time" />
+        </View>
+      </BottomSheetModal>
     </View>
   );
 }
@@ -218,11 +214,6 @@ const styles = StyleSheet.create({
     color: colors.primary,
     ...typography.caption,
     fontWeight: '900',
-  },
-  timeModalBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.72)',
   },
   timeModalCard: {
     maxHeight: '82%',

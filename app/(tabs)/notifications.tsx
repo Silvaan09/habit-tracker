@@ -106,7 +106,7 @@ export default function NotificationsScreen() {
   if (loading) {
     return (
       <Screen contentContainerStyle={[styles.content, styles.centeredState]}>
-        <Text style={styles.stateTitle}>Loading reminders...</Text>
+        <Text style={styles.stateTitle}></Text>
       </Screen>
     );
   }

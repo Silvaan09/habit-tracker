@@ -170,7 +170,7 @@ export default function StatsScreen() {
   if (loading) {
     return (
       <Screen contentContainerStyle={[styles.content, styles.centeredState]}>
-        <Text style={styles.stateTitle}>Loading stats...</Text>
+        <Text style={styles.stateTitle}></Text>
       </Screen>
     );
   }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Alert, Modal, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { BottomSheetModal } from '@/src/components/BottomSheetModal';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { Screen } from '@/src/components/Screen';
 import { getAllCompletions } from '@/src/db/completions';
@@ -230,61 +231,56 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      <Modal
-        animationType="slide"
+      <BottomSheetModal
         onRequestClose={() => {
           if (!importing) {
             setImportModalVisible(false);
           }
         }}
-        transparent
+        sheetStyle={styles.importModalCard}
         visible={importModalVisible}>
-        <View style={styles.importModalBackdrop}>
-          <View style={styles.importModalCard}>
-            <View style={styles.sectionHeader}>
-              <View>
-                <Text style={styles.sectionEyebrow}>Restore</Text>
-                <Text style={styles.cardTitle}>Paste backup text</Text>
-              </View>
-            </View>
-            <Text style={styles.bodyText}>
-              This replaces the habits currently on this phone with the backup you paste here.
-            </Text>
-            <TextInput
-              accessibilityLabel="Paste backup text"
-              autoCapitalize="none"
-              autoCorrect={false}
-              editable={!importing}
-              multiline
-              onChangeText={(value) => {
-                setImportJsonText(value);
-                setImportErrorMessage(null);
-              }}
-              placeholder="Paste your backup text here"
-              placeholderTextColor={colors.textSubtle}
-              style={styles.importInput}
-              value={importJsonText}
-            />
-            {importErrorMessage ? (
-              <Text style={styles.importErrorText}>{importErrorMessage}</Text>
-            ) : null}
-            <View style={styles.actions}>
-              <PrimaryButton
-                disabled={importing}
-                onPress={() => setImportModalVisible(false)}
-                title="Cancel"
-                variant="secondary"
-              />
-              <PrimaryButton
-                disabled={importing || importJsonText.trim().length === 0}
-                onPress={confirmImportData}
-                title={importing ? 'Importing...' : 'Import and replace'}
-                variant="danger"
-              />
-            </View>
+        <View style={styles.sectionHeader}>
+          <View>
+            <Text style={styles.sectionEyebrow}>Restore</Text>
+            <Text style={styles.cardTitle}>Paste backup text</Text>
           </View>
         </View>
-      </Modal>
+        <Text style={styles.bodyText}>
+          This replaces the habits currently on this phone with the backup you paste here.
+        </Text>
+        <TextInput
+          accessibilityLabel="Paste backup text"
+          autoCapitalize="none"
+          autoCorrect={false}
+          editable={!importing}
+          multiline
+          onChangeText={(value) => {
+            setImportJsonText(value);
+            setImportErrorMessage(null);
+          }}
+          placeholder="Paste your backup text here"
+          placeholderTextColor={colors.textSubtle}
+          style={styles.importInput}
+          value={importJsonText}
+        />
+        {importErrorMessage ? (
+          <Text style={styles.importErrorText}>{importErrorMessage}</Text>
+        ) : null}
+        <View style={styles.actions}>
+          <PrimaryButton
+            disabled={importing}
+            onPress={() => setImportModalVisible(false)}
+            title="Cancel"
+            variant="secondary"
+          />
+          <PrimaryButton
+            disabled={importing || importJsonText.trim().length === 0}
+            onPress={confirmImportData}
+            title={importing ? 'Importing...' : 'Import and replace'}
+            variant="danger"
+          />
+        </View>
+      </BottomSheetModal>
 
       <View style={styles.sectionCard}>
         <View style={styles.sectionHeader}>
@@ -378,11 +374,6 @@ const styles = StyleSheet.create({
   bodyText: {
     color: colors.textMuted,
     ...typography.body,
-  },
-  importModalBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.72)',
   },
   importModalCard: {
     maxHeight: '88%',

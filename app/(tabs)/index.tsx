@@ -15,7 +15,6 @@ import {
   Animated,
   DeviceEventEmitter,
   GestureResponderEvent,
-  Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
   PanResponder,
@@ -30,6 +29,7 @@ import {
 } from 'react-native';
 
 import { EmptyState } from '@/src/components/EmptyState';
+import { BottomSheetModal } from '@/src/components/BottomSheetModal';
 import { HabitCrownBadge } from '@/src/components/HabitCrownBadge';
 import { HabitHistoryMiniRow } from '@/src/components/HabitHistoryMiniRow';
 import { HabitIcon } from '@/src/components/HabitIcon';
@@ -983,7 +983,7 @@ export default function TodayScreen() {
       {layoutEditMode ? (
         <View style={styles.layoutEditBanner}>
           <Text style={styles.layoutEditTitle}>Layout edit mode</Text>
-          <Text style={styles.layoutEditText}>Choose card sizes. Completion actions are disabled.</Text>
+          <Text style={styles.layoutEditText}>Choose card sizes and move the boxes around.</Text>
         </View>
       ) : null}
 
@@ -1035,15 +1035,12 @@ export default function TodayScreen() {
         </View>
       )}
 
-      <Modal
-        animationType="slide"
+      <BottomSheetModal
         onRequestClose={closeProgressEditor}
-        transparent
+        sheetStyle={styles.modalCard}
         visible={Boolean(progressEditorHabit)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            {progressEditorHabit ? (
-              <View style={styles.progressEditor}>
+        {progressEditorHabit ? (
+          <View style={styles.progressEditor}>
                 <View style={styles.modalHeader}>
                   <Text style={styles.modalEyebrow}>Today progress</Text>
                   <Text style={styles.modalTitle}>{progressEditorHabit.name}</Text>
@@ -1167,21 +1164,16 @@ export default function TodayScreen() {
                     variant="secondary"
                   />
                 </View>
-              </View>
-            ) : null}
           </View>
-        </View>
-      </Modal>
+        ) : null}
+      </BottomSheetModal>
 
-      <Modal
-        animationType="slide"
+      <BottomSheetModal
         onRequestClose={closeLayoutSizeSelector}
-        transparent
+        sheetStyle={styles.modalCard}
         visible={Boolean(layoutSizeHabit)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            {layoutSizeHabit ? (
-              <>
+        {layoutSizeHabit ? (
+          <>
                 <View style={styles.modalHeader}>
                   <Text style={styles.modalEyebrow}>Card size</Text>
                   <Text style={styles.modalTitle}>{layoutSizeHabit.name}</Text>
@@ -1298,19 +1290,14 @@ export default function TodayScreen() {
                   onPress={closeLayoutSizeSelector}
                   title="Done"
                 />
-              </>
-            ) : null}
-          </View>
-        </View>
-      </Modal>
+          </>
+        ) : null}
+      </BottomSheetModal>
 
-      <Modal
-        animationType="slide"
+      <BottomSheetModal
         onRequestClose={() => setDatePickerVisible(false)}
-        transparent
+        sheetStyle={styles.datePickerCard}
         visible={datePickerVisible}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.datePickerCard}>
             <View style={styles.datePickerHeader}>
               <View>
                 <Text style={styles.modalEyebrow}>Select date</Text>
@@ -1396,17 +1383,12 @@ export default function TodayScreen() {
             <Text style={styles.modalText}>
               Future days can be viewed, but cannot be completed.
             </Text>
-          </View>
-        </View>
-      </Modal>
+      </BottomSheetModal>
 
-      <Modal
-        animationType="fade"
+      <BottomSheetModal
         onRequestClose={closeSkipModal}
-        transparent
+        sheetStyle={styles.modalCard}
         visible={Boolean(skipTargetHabitId)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalEyebrow}>Skip habit</Text>
               <Text style={styles.modalTitle}>Why are you skipping?</Text>
@@ -1452,9 +1434,7 @@ export default function TodayScreen() {
                 title={skipping ? 'Skipping...' : 'Skip habit'}
               />
             </View>
-          </View>
-        </View>
-      </Modal>
+      </BottomSheetModal>
     </Screen>
   );
 }
@@ -2780,12 +2760,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     ...typography.body,
     textAlign: 'center',
-  },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: spacing.xl,
-    backgroundColor: 'rgba(0, 0, 0, 0.72)',
   },
   modalCard: {
     gap: spacing.lg,

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { BottomSheetModal } from '@/src/components/BottomSheetModal';
 import { HabitIcon } from '@/src/components/HabitIcon';
 import {
   LUCIDE_HABIT_ICON_OPTIONS,
@@ -57,57 +58,53 @@ export function IconPicker({
   }
 
   return (
-    <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
-      <View style={styles.scrim}>
-        <View style={styles.sheet}>
-          <View style={styles.header}>
-            <View style={styles.headerCopy}>
-              <Text style={styles.eyebrow}>Choose icon</Text>
-              <Text style={styles.title}>Habit symbol</Text>
-            </View>
-            <Pressable
-              accessibilityLabel="Close icon picker"
-              accessibilityRole="button"
-              onPress={onClose}
-              style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}>
-              <LucideX size={22} color={colors.text} />
-            </Pressable>
-          </View>
+    <BottomSheetModal onRequestClose={onClose} sheetStyle={styles.sheet} visible={visible}>
+      <View style={styles.header}>
+        <View style={styles.headerCopy}>
+          <Text style={styles.eyebrow}>Choose icon</Text>
+          <Text style={styles.title}>Habit symbol</Text>
+        </View>
+        <Pressable
+          accessibilityLabel="Close icon picker"
+          accessibilityRole="button"
+          onPress={onClose}
+          style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}>
+          <LucideX size={22} color={colors.text} />
+        </Pressable>
+      </View>
 
-          <TextInput
-            accessibilityLabel="Search icons"
-            onChangeText={setSearch}
-            placeholder="Search health, study, water..."
-            placeholderTextColor={colors.textSubtle}
-            style={styles.searchInput}
-            value={search}
+      <TextInput
+        accessibilityLabel="Search icons"
+        onChangeText={setSearch}
+        placeholder="Search health, study, water..."
+        placeholderTextColor={colors.textSubtle}
+        style={styles.searchInput}
+        value={search}
+      />
+
+      <ScrollView contentContainerStyle={styles.iconSections} keyboardShouldPersistTaps="handled">
+        {normalizedSearch ? (
+          <IconGrid
+            accentColor={accentColor}
+            icons={filteredIcons}
+            onSelect={chooseIcon}
+            selected={selected}
           />
-
-          <ScrollView contentContainerStyle={styles.iconSections} keyboardShouldPersistTaps="handled">
-            {normalizedSearch ? (
+        ) : (
+          CATEGORIES.map((category) => (
+            <View key={category} style={styles.categorySection}>
+              <Text style={styles.categoryTitle}>{category}</Text>
               <IconGrid
                 accentColor={accentColor}
-                icons={filteredIcons}
+                icons={filteredIcons.filter((option) => option.category === category)}
                 onSelect={chooseIcon}
                 selected={selected}
               />
-            ) : (
-              CATEGORIES.map((category) => (
-                <View key={category} style={styles.categorySection}>
-                  <Text style={styles.categoryTitle}>{category}</Text>
-                  <IconGrid
-                    accentColor={accentColor}
-                    icons={filteredIcons.filter((option) => option.category === category)}
-                    onSelect={chooseIcon}
-                    selected={selected}
-                  />
-                </View>
-              ))
-            )}
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
+            </View>
+          ))
+        )}
+      </ScrollView>
+    </BottomSheetModal>
   );
 }
 
@@ -188,11 +185,6 @@ function PickerTile({
 }
 
 const styles = StyleSheet.create({
-  scrim: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.72)',
-  },
   sheet: {
     maxHeight: '88%',
     gap: spacing.lg,

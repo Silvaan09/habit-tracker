@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 
+import { BottomSheetModal } from '@/src/components/BottomSheetModal';
 import { HabitIcon } from '@/src/components/HabitIcon';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { ReminderTimePicker } from '@/src/components/ReminderTimePicker';
@@ -121,105 +122,96 @@ export function ReminderEditorModal({
   }
 
   return (
-    <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
-      <View style={styles.backdrop}>
-        <View style={styles.card}>
-          {habit ? (
-            <>
-              <View style={styles.header}>
-                <Text style={styles.eyebrow}>Reminder</Text>
-                <View style={styles.habitRow}>
-                  <HabitIcon
-                    color={habit.color ?? colors.habitGreen}
-                    fallbackIcon={habit.icon}
-                    iconLibrary={habit.iconLibrary}
-                    iconType={habit.iconType}
-                    iconValue={habit.iconValue}
-                    size={48}
-                  />
-                  <View style={styles.habitText}>
-                    <Text style={styles.title}>{habit.name}</Text>
-                    <Text style={styles.subtitle}>Edit only this reminder.</Text>
-                  </View>
-                </View>
+    <BottomSheetModal onRequestClose={onClose} sheetStyle={styles.card} visible={visible}>
+      {habit ? (
+        <>
+          <View style={styles.header}>
+            <Text style={styles.eyebrow}>Reminder</Text>
+            <View style={styles.habitRow}>
+              <HabitIcon
+                color={habit.color ?? colors.habitGreen}
+                fallbackIcon={habit.icon}
+                iconLibrary={habit.iconLibrary}
+                iconType={habit.iconType}
+                iconValue={habit.iconValue}
+                size={48}
+              />
+              <View style={styles.habitText}>
+                <Text style={styles.title}>{habit.name}</Text>
+                <Text style={styles.subtitle}>Edit only this reminder.</Text>
               </View>
+            </View>
+          </View>
 
-              {permissionStatus === 'granted' ? null : (
-                <View style={styles.permissionCard}>
-                  <Text style={styles.permissionText}>
-                    Notifications are {permissionStatus}, so reminders may not schedule.
-                  </Text>
-                  <PrimaryButton
-                    disabled={requesting}
-                    onPress={requestPermission}
-                    title={requesting ? 'Requesting...' : 'Request permission'}
-                    variant="secondary"
-                  />
-                </View>
-              )}
+          {permissionStatus === 'granted' ? null : (
+            <View style={styles.permissionCard}>
+              <Text style={styles.permissionText}>
+                Notifications are {permissionStatus}, so reminders may not schedule.
+              </Text>
+              <PrimaryButton
+                disabled={requesting}
+                onPress={requestPermission}
+                title={requesting ? 'Requesting...' : 'Request permission'}
+                variant="secondary"
+              />
+            </View>
+          )}
 
-              <Pressable
-                accessibilityLabel={reminderEnabled ? 'Disable reminder' : 'Enable reminder'}
-                accessibilityRole="switch"
-                accessibilityState={{ checked: reminderEnabled }}
-                disabled={saving}
-                onPress={() => setReminderEnabled((current) => !current)}
-                style={({ pressed }) => [
-                  styles.toggleRow,
-                  pressed && styles.pressed,
-                  saving && styles.disabled,
-                ]}>
-                <View style={styles.toggleText}>
-                  <Text style={styles.toggleTitle}>Reminder enabled</Text>
-                  <Text style={styles.toggleMeta}>
-                    {reminderEnabled ? 'Reminder is on.' : 'Reminder is off.'}
-                  </Text>
-                </View>
-                <Switch
-                  disabled={saving}
-                  onValueChange={setReminderEnabled}
-                  pointerEvents="none"
-                  thumbColor={reminderEnabled ? colors.primary : colors.textMuted}
-                  trackColor={{ false: colors.surfaceMuted, true: colors.primaryMuted }}
-                  value={reminderEnabled}
-                />
-              </Pressable>
+          <Pressable
+            accessibilityLabel={reminderEnabled ? 'Disable reminder' : 'Enable reminder'}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: reminderEnabled }}
+            disabled={saving}
+            onPress={() => setReminderEnabled((current) => !current)}
+            style={({ pressed }) => [
+              styles.toggleRow,
+              pressed && styles.pressed,
+              saving && styles.disabled,
+            ]}>
+            <View style={styles.toggleText}>
+              <Text style={styles.toggleTitle}>Reminder enabled</Text>
+              <Text style={styles.toggleMeta}>
+                {reminderEnabled ? 'Reminder is on.' : 'Reminder is off.'}
+              </Text>
+            </View>
+            <Switch
+              disabled={saving}
+              onValueChange={setReminderEnabled}
+              pointerEvents="none"
+              thumbColor={reminderEnabled ? colors.primary : colors.textMuted}
+              trackColor={{ false: colors.surfaceMuted, true: colors.primaryMuted }}
+              value={reminderEnabled}
+            />
+          </Pressable>
 
-              {reminderEnabled ? (
-                <ReminderTimePicker
-                  disabled={saving}
-                  onChange={(value) => {
-                    setReminderTime(value);
-                    setErrorMessage(null);
-                  }}
-                  value={reminderTime}
-                />
-              ) : null}
-
-              {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-
-              <View style={styles.actions}>
-                <PrimaryButton disabled={saving} onPress={onClose} title="Cancel" variant="secondary" />
-                <PrimaryButton
-                  disabled={saving}
-                  onPress={saveReminder}
-                  title={saving ? 'Saving...' : 'Save reminder'}
-                />
-              </View>
-            </>
+          {reminderEnabled ? (
+            <ReminderTimePicker
+              disabled={saving}
+              onChange={(value) => {
+                setReminderTime(value);
+                setErrorMessage(null);
+              }}
+              value={reminderTime}
+            />
           ) : null}
-        </View>
-      </View>
-    </Modal>
+
+          {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+
+          <View style={styles.actions}>
+            <PrimaryButton disabled={saving} onPress={onClose} title="Cancel" variant="secondary" />
+            <PrimaryButton
+              disabled={saving}
+              onPress={saveReminder}
+              title={saving ? 'Saving...' : 'Save reminder'}
+            />
+          </View>
+        </>
+      ) : null}
+    </BottomSheetModal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.72)',
-  },
   card: {
     gap: spacing.lg,
     padding: spacing.xl,
