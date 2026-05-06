@@ -9,6 +9,8 @@ export type ActivityHeatmapDay = {
   completedCount: number;
   totalCount: number;
   percentage: number;
+  isFullyCompletedDay?: boolean;
+  isTrackedDay?: boolean;
 };
 
 type ActivityHeatmapProps = {
@@ -16,7 +18,10 @@ type ActivityHeatmapProps = {
   endDate: string;
   startDate: string;
   emptyMessage?: string;
+  rangeTitle?: string;
   scrollable?: boolean;
+  showMonthLabels?: boolean;
+  summaryText?: string;
 };
 
 type HeatmapCell = ActivityHeatmapDay & {
@@ -30,13 +35,19 @@ type HeatmapWeek = {
 };
 
 const WEEKDAY_LABELS = ['', 'M', '', 'W', '', 'F', ''];
+const CELL_SIZE = 11;
+const CELL_GAP = 3;
+const WEEKDAY_WIDTH = 18;
 
 export function ActivityHeatmap({
   days,
   endDate,
   startDate,
   emptyMessage = 'No completions in this range yet.',
+  rangeTitle,
   scrollable = false,
+  showMonthLabels = true,
+  summaryText,
 }: ActivityHeatmapProps) {
   const activityByDate = useMemo(
     () => new Map(days.map((day) => [day.date, day])),
@@ -46,18 +57,23 @@ export function ActivityHeatmap({
     () => getHeatmapWeeks(startDate, endDate, activityByDate),
     [activityByDate, endDate, startDate]
   );
-  const totalCompletedDays = days.filter((day) => day.completedCount > 0).length;
-  const totalCompletions = days.reduce((sum, day) => sum + day.completedCount, 0);
+  const hasCompletions = days.some((day) => day.completedCount > 0);
   const grid = (
     <View style={styles.gridWrap}>
-      <View style={styles.monthRow}>
-        <View style={styles.weekdaySpacer} />
-        {weeks.map((week) => (
-          <Text key={week.key} numberOfLines={1} style={styles.monthLabel}>
-            {week.monthLabel ?? ''}
-          </Text>
-        ))}
-      </View>
+      {showMonthLabels ? (
+        <View style={styles.monthRow}>
+          {weeks.map((week, weekIndex) =>
+            week.monthLabel ? (
+              <Text
+                key={week.key}
+                numberOfLines={1}
+                style={[styles.monthLabel, { left: getMonthLabelLeft(weekIndex) }]}>
+                {week.monthLabel}
+              </Text>
+            ) : null
+          )}
+        </View>
+      ) : null}
 
       <View style={styles.heatmapBody}>
         <View style={styles.weekdayColumn}>
@@ -95,9 +111,12 @@ export function ActivityHeatmap({
 
   return (
     <View style={styles.container}>
+      {rangeTitle ? <Text style={styles.rangeTitle}>{rangeTitle}</Text> : null}
       <Text style={styles.summary}>
-        {totalCompletions} completion{totalCompletions === 1 ? '' : 's'} across{' '}
-        {totalCompletedDays} active day{totalCompletedDays === 1 ? '' : 's'}
+        {summaryText ??
+          `${days.filter((day) => day.isFullyCompletedDay).length} complete days across ${
+            days.filter((day) => day.isTrackedDay).length
+          } tracked days`}
       </Text>
 
       {scrollable ? (
@@ -126,7 +145,7 @@ export function ActivityHeatmap({
         <Text style={styles.legendText}>More</Text>
       </View>
 
-      {totalCompletions === 0 ? <Text style={styles.emptyText}>{emptyMessage}</Text> : null}
+      {!hasCompletions ? <Text style={styles.emptyText}>{emptyMessage}</Text> : null}
     </View>
   );
 }
@@ -147,7 +166,7 @@ function getHeatmapWeeks(
 
     return {
       key: format(weekStart, 'yyyy-MM-dd'),
-      monthLabel: getMonthLabelForWeek(weekStart, weekIndex),
+      monthLabel: getMonthLabelForWeek(weekStart, weekIndex, start, end),
       cells: Array.from({ length: 7 }, (_, dayIndex) => {
         const date = addDays(weekStart, dayIndex);
         const dateString = format(date, 'yyyy-MM-dd');
@@ -166,15 +185,27 @@ function getHeatmapWeeks(
   });
 }
 
-function getMonthLabelForWeek(weekStart: Date, weekIndex: number) {
-  const hasFirstOfMonth = Array.from({ length: 7 }, (_, dayIndex) => addDays(weekStart, dayIndex))
-    .some((date) => format(date, 'd') === '1');
+function getMonthLabelForWeek(weekStart: Date, weekIndex: number, start: Date, end: Date) {
+  const weekDates = Array.from({ length: 7 }, (_, dayIndex) => addDays(weekStart, dayIndex));
+  const startDateString = format(start, 'yyyy-MM-dd');
+  const firstInRangeDate = weekDates.find((date) => format(date, 'yyyy-MM-dd') === startDateString);
+  const firstOfMonthDate = weekDates.find(
+    (date) => date >= start && date <= end && format(date, 'd') === '1'
+  );
 
-  if (weekIndex === 0 || hasFirstOfMonth) {
-    return format(weekStart, 'MMM');
+  if (weekIndex === 0 && firstInRangeDate) {
+    return format(firstInRangeDate, 'MMM');
+  }
+
+  if (firstOfMonthDate) {
+    return format(firstOfMonthDate, 'MMM');
   }
 
   return null;
+}
+
+function getMonthLabelLeft(weekIndex: number) {
+  return WEEKDAY_WIDTH + spacing.sm + weekIndex * (CELL_SIZE + CELL_GAP);
 }
 
 function getCellIntensityStyle(percentage: number) {
@@ -221,6 +252,12 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
     alignItems: 'center',
   },
+  rangeTitle: {
+    color: colors.text,
+    ...typography.body,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
   summary: {
     color: colors.textMuted,
     ...typography.caption,
@@ -233,15 +270,12 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   monthRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  weekdaySpacer: {
-    width: 18,
+    position: 'relative',
+    height: 14,
   },
   monthLabel: {
-    width: 11,
+    position: 'absolute',
+    width: 32,
     color: colors.textSubtle,
     fontSize: 9,
     fontWeight: '800',
@@ -254,11 +288,11 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   weekdayLabel: {
-    width: 18,
-    height: 11,
+    width: WEEKDAY_WIDTH,
+    height: CELL_SIZE,
     color: colors.textSubtle,
     fontSize: 9,
-    lineHeight: 11,
+    lineHeight: CELL_SIZE,
     fontWeight: '800',
   },
   weeksRow: {
@@ -269,8 +303,8 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   cell: {
-    width: 11,
-    height: 11,
+    width: CELL_SIZE,
+    height: CELL_SIZE,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 3,

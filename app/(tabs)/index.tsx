@@ -956,7 +956,6 @@ export default function TodayScreen() {
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Habits</Text>
         <View style={styles.sectionHeaderActions}>
-          <Text style={styles.dateText}>{selectedDateDisplay}</Text>
           <Pressable
             accessibilityLabel={layoutEditMode ? 'Finish editing Today layout' : 'Edit Today layout'}
             accessibilityRole="button"
@@ -2499,10 +2498,6 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: colors.text,
     ...typography.heading,
-  },
-  dateText: {
-    color: colors.textSubtle,
-    ...typography.caption,
   },
   sectionHeaderActions: {
     flexDirection: 'row',
