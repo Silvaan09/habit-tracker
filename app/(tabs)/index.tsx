@@ -1,9 +1,19 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { addDays, addWeeks, format, parseISO, startOfWeek } from 'date-fns';
-import { router } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
 import {
+  addDays,
+  addMonths,
+  addWeeks,
+  format,
+  parseISO,
+  startOfMonth,
+  startOfWeek,
+} from 'date-fns';
+import { router } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Animated,
+  DeviceEventEmitter,
   GestureResponderEvent,
   Modal,
   PanResponder,
@@ -25,19 +35,33 @@ import {
 } from '@/src/db/completions';
 import { initDatabase } from '@/src/db/database';
 import { getActiveHabits } from '@/src/db/habits';
-import { getNumericEntryForDate } from '@/src/db/numericEntries';
-import { getSkipsForDate, skipHabitForDate, unskipHabitForDate } from '@/src/db/skips';
+import { getNumericEntryForDate, setNumericEntryForDate } from '@/src/db/numericEntries';
 import {
+  getSkipsForDate,
+  getSkipsForDateRange,
+  skipHabitForDate,
+  unskipHabitForDate,
+} from '@/src/db/skips';
+import {
+  completeSubtaskForDate,
   getSubtaskCompletionsForHabitDate,
   getSubtasksForHabit,
+  uncompleteSubtaskForDate,
 } from '@/src/db/subtasks';
 import { colors, radius, spacing, typography } from '@/src/theme';
-import type { Habit, HabitCompletion, HabitSkip } from '@/src/types/Habit';
+import type {
+  Habit,
+  HabitCompletion,
+  HabitSkip,
+  HabitSubtask,
+  HabitSubtaskCompletion,
+} from '@/src/types/Habit';
 import {
   formatDisplayDateDDMMYYYY,
   getTodayDateString,
   isFutureDate,
 } from '@/src/utils/dates';
+import { TODAY_TAB_RESELECT_EVENT } from '@/src/utils/navigation';
 import { getScheduledHabitsForDate } from '@/src/utils/schedule';
 
 type HabitProgress = {
@@ -45,10 +69,13 @@ type HabitProgress = {
   percent: number;
 };
 
+const WEEKLY_SKIP_LIMIT = 1;
+
 export default function TodayScreen() {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [completions, setCompletions] = useState<HabitCompletion[]>([]);
   const [skips, setSkips] = useState<HabitSkip[]>([]);
+  const [weeklySkips, setWeeklySkips] = useState<HabitSkip[]>([]);
   const [progressByHabitId, setProgressByHabitId] = useState<Record<string, HabitProgress>>({});
   const [actualTodayDate, setActualTodayDate] = useState(getTodayDateString);
   const [selectedDate, setSelectedDate] = useState(getTodayDateString);
@@ -63,6 +90,19 @@ export default function TodayScreen() {
   const [skipReason, setSkipReason] = useState('');
   const [skipReasonError, setSkipReasonError] = useState<string | null>(null);
   const [skipping, setSkipping] = useState(false);
+  const [progressEditorHabitId, setProgressEditorHabitId] = useState<string | null>(null);
+  const [progressEditorLoading, setProgressEditorLoading] = useState(false);
+  const [progressEditorError, setProgressEditorError] = useState<string | null>(null);
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
+  const [datePickerMonth, setDatePickerMonth] = useState(() =>
+    format(startOfMonth(parseISO(getTodayDateString())), 'yyyy-MM-dd')
+  );
+  const [editorSubtasks, setEditorSubtasks] = useState<HabitSubtask[]>([]);
+  const [editorSubtaskCompletions, setEditorSubtaskCompletions] = useState<
+    HabitSubtaskCompletion[]
+  >([]);
+  const [editorNumericValue, setEditorNumericValue] = useState('');
+  const [savingProgress, setSavingProgress] = useState(false);
 
   const loadTodayData = useCallback(async (dateToLoad: string) => {
     const currentToday = getTodayDateString();
@@ -70,15 +110,19 @@ export default function TodayScreen() {
     setActualTodayDate(currentToday);
     await initDatabase();
 
-    const [activeHabits, dateCompletions, dateSkips] = await Promise.all([
+    const weekStart = getWeekStartDateString(dateToLoad);
+    const weekEnd = format(addDays(parseISO(weekStart), 6), 'yyyy-MM-dd');
+    const [activeHabits, dateCompletions, dateSkips, weekSkips] = await Promise.all([
       getActiveHabits(),
       getCompletionsForDate(dateToLoad),
       getSkipsForDate(dateToLoad),
+      getSkipsForDateRange(weekStart, weekEnd),
     ]);
 
     setHabits(activeHabits);
     setCompletions(dateCompletions);
     setSkips(dateSkips);
+    setWeeklySkips(weekSkips);
     setProgressByHabitId(await getProgressByHabitId(activeHabits, dateToLoad));
   }, []);
 
@@ -139,6 +183,7 @@ export default function TodayScreen() {
     () => scheduledHabits.filter((habit) => skippedHabitIds.has(habit.id)).length,
     [scheduledHabits, skippedHabitIds]
   );
+  const skipsRemainingThisWeek = Math.max(WEEKLY_SKIP_LIMIT - weeklySkips.length, 0);
   const remainingCount = Math.max(scheduledHabits.length - completedCount - skippedCount, 0);
   const selectedDateIsFuture = useMemo(
     () => isFutureDate(selectedDate, actualTodayDate),
@@ -166,6 +211,14 @@ export default function TodayScreen() {
   const selectedDateLabel = useMemo(
     () => (selectedDate === actualTodayDate ? 'today' : format(parseISO(selectedDate), 'MMM d')),
     [actualTodayDate, selectedDate]
+  );
+  const progressEditorHabit = useMemo(
+    () => habits.find((habit) => habit.id === progressEditorHabitId) ?? null,
+    [habits, progressEditorHabitId]
+  );
+  const editorCompletedSubtaskIds = useMemo(
+    () => new Set(editorSubtaskCompletions.map((completion) => completion.subtaskId)),
+    [editorSubtaskCompletions]
   );
   const selectDate = useCallback(
     async (date: string) => {
@@ -195,12 +248,33 @@ export default function TodayScreen() {
     },
     [selectDate, visibleWeekStart]
   );
+
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(TODAY_TAB_RESELECT_EVENT, () => {
+      const today = getTodayDateString();
+
+      selectedDateRef.current = today;
+      setVisibleWeekStart(getWeekStartDateString(today));
+      void selectDate(today);
+    });
+
+    return () => subscription.remove();
+  }, [selectDate]);
+
   const visibleWeekLabel = useMemo(() => {
     const weekStart = parseISO(visibleWeekStart);
     const weekEnd = addDays(weekStart, 6);
 
     return `${format(weekStart, 'MMM d')} - ${format(weekEnd, 'MMM d')}`;
   }, [visibleWeekStart]);
+  const datePickerDays = useMemo(
+    () => getCalendarMonthDays(datePickerMonth, actualTodayDate, selectedDate),
+    [actualTodayDate, datePickerMonth, selectedDate]
+  );
+  const datePickerMonthLabel = useMemo(
+    () => format(parseISO(datePickerMonth), 'MMMM yyyy'),
+    [datePickerMonth]
+  );
   const weekPanResponder = useMemo(
     () =>
       PanResponder.create({
@@ -220,14 +294,38 @@ export default function TodayScreen() {
   );
 
   async function refreshSelectedDateStatuses() {
-    const [dateCompletions, dateSkips] = await Promise.all([
+    const weekStart = getWeekStartDateString(selectedDate);
+    const weekEnd = format(addDays(parseISO(weekStart), 6), 'yyyy-MM-dd');
+    const [dateCompletions, dateSkips, weekSkips] = await Promise.all([
       getCompletionsForDate(selectedDate),
       getSkipsForDate(selectedDate),
+      getSkipsForDateRange(weekStart, weekEnd),
     ]);
 
     setCompletions(dateCompletions);
     setSkips(dateSkips);
+    setWeeklySkips(weekSkips);
     setProgressByHabitId(await getProgressByHabitId(habits, selectedDate));
+  }
+
+  function openDatePicker() {
+    setDatePickerMonth(format(startOfMonth(parseISO(selectedDateRef.current)), 'yyyy-MM-dd'));
+    setDatePickerVisible(true);
+  }
+
+  async function chooseDateFromPicker(date: string) {
+    setVisibleWeekStart(getWeekStartDateString(date));
+    setDatePickerVisible(false);
+    await selectDate(date);
+  }
+
+  async function jumpToTodayFromPicker() {
+    const today = getTodayDateString();
+
+    setVisibleWeekStart(getWeekStartDateString(today));
+    setDatePickerMonth(format(startOfMonth(parseISO(today)), 'yyyy-MM-dd'));
+    setDatePickerVisible(false);
+    await selectDate(today);
   }
 
   async function toggleHabit(habitId: string) {
@@ -259,9 +357,16 @@ export default function TodayScreen() {
       return;
     }
 
+    if (skipsRemainingThisWeek <= 0 && !skippedHabitIds.has(habitId)) {
+      setErrorMessage('You have used your skip for this week.');
+      return;
+    }
+
     setSkipTargetHabitId(habitId);
     setSkipReason('');
-    setSkipReasonError(null);
+    setSkipReasonError(
+      skipsRemainingThisWeek > 0 ? `${skipsRemainingThisWeek} skip left this week.` : null
+    );
   }
 
   function closeSkipModal() {
@@ -324,6 +429,140 @@ export default function TodayScreen() {
     }
   }
 
+  async function openProgressEditor(habitId: string) {
+    const habit = habits.find((item) => item.id === habitId);
+
+    if (
+      !habit ||
+      selectedDateIsFuture ||
+      skippedHabitIds.has(habitId) ||
+      habit.trackingType === 'checkbox'
+    ) {
+      return;
+    }
+
+    setProgressEditorHabitId(habitId);
+    setProgressEditorError(null);
+    await loadProgressEditorData(habit);
+  }
+
+  async function loadProgressEditorData(habit: Habit) {
+    try {
+      setProgressEditorLoading(true);
+      setProgressEditorError(null);
+
+      if (habit.trackingType === 'subtasks') {
+        const [subtasks, subtaskCompletions] = await Promise.all([
+          getSubtasksForHabit(habit.id),
+          getSubtaskCompletionsForHabitDate(habit.id, selectedDate),
+        ]);
+
+        setEditorSubtasks(subtasks);
+        setEditorSubtaskCompletions(subtaskCompletions);
+        setEditorNumericValue('');
+      }
+
+      if (habit.trackingType === 'numeric') {
+        const entry = await getNumericEntryForDate(habit.id, selectedDate);
+
+        setEditorSubtasks([]);
+        setEditorSubtaskCompletions([]);
+        setEditorNumericValue(entry ? String(entry.value) : '0');
+      }
+    } catch (error) {
+      console.error('Failed to load Today progress editor', error);
+      setProgressEditorError('Could not load progress for this habit.');
+    } finally {
+      setProgressEditorLoading(false);
+    }
+  }
+
+  function closeProgressEditor() {
+    if (savingProgress) {
+      return;
+    }
+
+    setProgressEditorHabitId(null);
+    setProgressEditorError(null);
+    setEditorSubtasks([]);
+    setEditorSubtaskCompletions([]);
+    setEditorNumericValue('');
+  }
+
+  async function toggleEditorSubtask(subtask: HabitSubtask) {
+    if (!progressEditorHabit || selectedDateIsFuture || skippedHabitIds.has(progressEditorHabit.id)) {
+      return;
+    }
+
+    try {
+      setSavingProgress(true);
+      setProgressEditorError(null);
+      setBusyHabitIds((current) => ({ ...current, [progressEditorHabit.id]: true }));
+
+      if (editorCompletedSubtaskIds.has(subtask.id)) {
+        await uncompleteSubtaskForDate(subtask.id, selectedDate);
+      } else {
+        await completeSubtaskForDate(subtask.id, progressEditorHabit.id, selectedDate);
+      }
+
+      const nextCompletions = await getSubtaskCompletionsForHabitDate(
+        progressEditorHabit.id,
+        selectedDate
+      );
+      setEditorSubtaskCompletions(nextCompletions);
+      await refreshSelectedDateStatuses();
+    } catch (error) {
+      console.error('Failed to update subtask from Today', error);
+      setProgressEditorError('Could not update that subtask.');
+    } finally {
+      if (progressEditorHabit) {
+        setBusyHabitIds((current) => ({ ...current, [progressEditorHabit.id]: false }));
+      }
+      setSavingProgress(false);
+    }
+  }
+
+  async function saveEditorNumericProgress(nextValue = editorNumericValue) {
+    if (!progressEditorHabit || selectedDateIsFuture || skippedHabitIds.has(progressEditorHabit.id)) {
+      return;
+    }
+
+    const parsedValue = Number(nextValue.replace(',', '.'));
+
+    if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+      setProgressEditorError('Enter a value of 0 or more.');
+      return;
+    }
+
+    try {
+      setSavingProgress(true);
+      setProgressEditorError(null);
+      setBusyHabitIds((current) => ({ ...current, [progressEditorHabit.id]: true }));
+      await setNumericEntryForDate(progressEditorHabit.id, selectedDate, parsedValue);
+      const nextEntry = await getNumericEntryForDate(progressEditorHabit.id, selectedDate);
+
+      setEditorNumericValue(nextEntry ? String(nextEntry.value) : '0');
+      await refreshSelectedDateStatuses();
+    } catch (error) {
+      console.error('Failed to update numeric progress from Today', error);
+      setProgressEditorError('Could not save progress.');
+    } finally {
+      if (progressEditorHabit) {
+        setBusyHabitIds((current) => ({ ...current, [progressEditorHabit.id]: false }));
+      }
+      setSavingProgress(false);
+    }
+  }
+
+  async function adjustEditorNumericProgress(delta: number) {
+    const currentValue = Number(editorNumericValue.replace(',', '.'));
+    const safeCurrentValue = Number.isFinite(currentValue) ? currentValue : 0;
+    const nextValue = Math.max(0, safeCurrentValue + delta);
+
+    setEditorNumericValue(formatProgressNumber(nextValue));
+    await saveEditorNumericProgress(String(nextValue));
+  }
+
   function openNewHabitScreen() {
     router.push('/habits/new');
   }
@@ -374,19 +613,15 @@ export default function TodayScreen() {
         </View>
 
         <Text style={styles.buildDayMotivation}>{motivationLine}</Text>
-
-        <View style={styles.buildDayTrack}>
-          <View style={[styles.buildDayFill, { width: `${completionPercent}%` }]} />
+        <View style={styles.skipLimitPill}>
+          <Text style={styles.skipLimitText}>
+            {skipsRemainingThisWeek > 0
+              ? `${skipsRemainingThisWeek} skip left this week`
+              : 'No skips left this week'}
+          </Text>
         </View>
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Create a new habit"
-          onPress={openNewHabitScreen}
-          style={({ pressed }) => [styles.buildDayAddButton, pressed && styles.pressed]}>
-          <Ionicons name="add" size={18} color={colors.background} />
-          <Text style={styles.buildDayAddText}>New habit</Text>
-        </Pressable>
+        <AnimatedProgressBar color={colors.primary} height={12} percent={completionPercent / 100} />
       </View>
 
       <View style={styles.weekCardConnected} {...weekPanResponder.panHandlers}>
@@ -398,10 +633,14 @@ export default function TodayScreen() {
             style={({ pressed }) => [styles.weekArrowButton, pressed && styles.pressed]}>
             <Text style={styles.weekArrowText}>{'<'}</Text>
           </Pressable>
-          <View style={styles.weekHeaderText}>
+          <Pressable
+            accessibilityLabel="Open date picker"
+            accessibilityRole="button"
+            onPress={openDatePicker}
+            style={({ pressed }) => [styles.weekHeaderText, pressed && styles.pressed]}>
             <Text style={styles.weekEyebrow}>Week</Text>
             <Text style={styles.weekTitle}>{visibleWeekLabel}</Text>
-          </View>
+          </Pressable>
           <Pressable
             accessibilityLabel="Show next week"
             accessibilityRole="button"
@@ -486,25 +725,261 @@ export default function TodayScreen() {
 
             return (
               <TodayHabitCard
-              key={habit.id}
-              habit={habit}
+                key={habit.id}
+                habit={habit}
                 completed={completed}
                 skipped={skipped}
                 skipReason={skip?.reason}
                 progress={progress}
-              disabled={Boolean(busyHabitIds[habit.id])}
-              skipDisabled={selectedDateIsFuture}
+                disabled={Boolean(busyHabitIds[habit.id])}
+                progressDisabled={selectedDateIsFuture || skipped}
+                skipDisabled={selectedDateIsFuture}
                 toggleDisabled={selectedDateIsFuture || habit.trackingType !== 'checkbox'}
-              completionDateLabel={selectedDateLabel}
-              onToggle={toggleHabit}
-              onSkip={openSkipModal}
-              onUndoSkip={undoSkip}
-              onPress={openHabitDetail}
-            />
+                completionDateLabel={selectedDateLabel}
+                onEditProgress={openProgressEditor}
+                onToggle={toggleHabit}
+                onSkip={openSkipModal}
+                onUndoSkip={undoSkip}
+                onPress={openHabitDetail}
+              />
             );
           })}
         </View>
       )}
+
+      <Modal
+        animationType="slide"
+        onRequestClose={closeProgressEditor}
+        transparent
+        visible={Boolean(progressEditorHabit)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            {progressEditorHabit ? (
+              <View style={styles.progressEditor}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalEyebrow}>Today progress</Text>
+                  <Text style={styles.modalTitle}>{progressEditorHabit.name}</Text>
+                  <Text style={styles.modalText}>{selectedDateDisplay}</Text>
+                </View>
+
+                {progressEditorLoading ? (
+                  <Text style={styles.modalText}>Loading progress...</Text>
+                ) : progressEditorHabit.trackingType === 'subtasks' ? (
+                  <View style={styles.editorList}>
+                    {editorSubtasks.length === 0 ? (
+                      <Text style={styles.modalText}>No subtasks yet.</Text>
+                    ) : (
+                      editorSubtasks.map((subtask) => {
+                        const checked = editorCompletedSubtaskIds.has(subtask.id);
+
+                        return (
+                          <Pressable
+                            accessibilityLabel={`${checked ? 'Uncheck' : 'Check'} ${subtask.title}`}
+                            accessibilityRole="checkbox"
+                            accessibilityState={{ checked }}
+                            disabled={savingProgress}
+                            key={subtask.id}
+                            onPress={() => toggleEditorSubtask(subtask)}
+                            style={({ pressed }) => [
+                              styles.editorChecklistRow,
+                              checked && styles.checkedEditorChecklistRow,
+                              pressed && styles.pressed,
+                              savingProgress && styles.controlDisabled,
+                            ]}>
+                            <View
+                              style={[
+                                styles.editorCheck,
+                                checked && styles.checkedEditorCheck,
+                              ]}>
+                              {checked ? (
+                                <Ionicons
+                                  name="checkmark"
+                                  size={16}
+                                  color={colors.background}
+                                />
+                              ) : null}
+                            </View>
+                            <Text
+                              style={[
+                                styles.editorChecklistText,
+                                checked && styles.checkedEditorChecklistText,
+                              ]}>
+                              {subtask.title}
+                            </Text>
+                          </Pressable>
+                        );
+                      })
+                    )}
+                  </View>
+                ) : (
+                  <View style={styles.numericEditor}>
+                    <Text style={styles.numericTargetText}>
+                      Target {formatProgressNumber(progressEditorHabit.targetValue ?? 0)}
+                      {progressEditorHabit.targetUnit ? ` ${progressEditorHabit.targetUnit}` : ''}
+                    </Text>
+                    <TextInput
+                      accessibilityLabel="Numeric progress value"
+                      editable={!savingProgress}
+                      keyboardType="decimal-pad"
+                      onChangeText={(value) => {
+                        setEditorNumericValue(value.replace(/[^0-9.,]/g, ''));
+                        setProgressEditorError(null);
+                      }}
+                      placeholder="0"
+                      placeholderTextColor={colors.textSubtle}
+                      style={styles.numericInput}
+                      value={editorNumericValue}
+                    />
+                    <View style={styles.numericQuickActions}>
+                      <Pressable
+                        accessibilityLabel="Decrease progress"
+                        accessibilityRole="button"
+                        disabled={savingProgress}
+                        onPress={() => adjustEditorNumericProgress(-1)}
+                        style={[styles.numericStepButton, savingProgress && styles.controlDisabled]}>
+                        <Text style={styles.numericStepText}>-1</Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityLabel="Increase progress"
+                        accessibilityRole="button"
+                        disabled={savingProgress}
+                        onPress={() => adjustEditorNumericProgress(1)}
+                        style={[styles.numericStepButton, savingProgress && styles.controlDisabled]}>
+                        <Text style={styles.numericStepText}>+1</Text>
+                      </Pressable>
+                    </View>
+                    <PrimaryButton
+                      disabled={savingProgress}
+                      onPress={() => saveEditorNumericProgress()}
+                      title={savingProgress ? 'Saving...' : 'Save progress'}
+                    />
+                  </View>
+                )}
+
+                {progressEditorError ? (
+                  <Text style={styles.reasonError}>{progressEditorError}</Text>
+                ) : null}
+
+                <View style={styles.modalActions}>
+                  <PrimaryButton
+                    disabled={savingProgress}
+                    onPress={closeProgressEditor}
+                    title="Close"
+                    variant="secondary"
+                  />
+                  <PrimaryButton
+                    disabled={savingProgress}
+                    onPress={() => {
+                      const habitId = progressEditorHabit.id;
+
+                      closeProgressEditor();
+                      openHabitDetail(habitId);
+                    }}
+                    title="Open detail"
+                    variant="secondary"
+                  />
+                </View>
+              </View>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="slide"
+        onRequestClose={() => setDatePickerVisible(false)}
+        transparent
+        visible={datePickerVisible}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.datePickerCard}>
+            <View style={styles.datePickerHeader}>
+              <View>
+                <Text style={styles.modalEyebrow}>Select date</Text>
+                <Text style={styles.modalTitle}>{datePickerMonthLabel}</Text>
+              </View>
+              <Pressable
+                accessibilityLabel="Close date picker"
+                accessibilityRole="button"
+                onPress={() => setDatePickerVisible(false)}
+                style={({ pressed }) => [styles.datePickerCloseButton, pressed && styles.pressed]}>
+                <Text style={styles.datePickerCloseText}>Close</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.datePickerMonthNav}>
+              <Pressable
+                accessibilityLabel="Show previous month"
+                accessibilityRole="button"
+                onPress={() =>
+                  setDatePickerMonth((current) =>
+                    format(addMonths(parseISO(current), -1), 'yyyy-MM-dd')
+                  )
+                }
+                style={({ pressed }) => [styles.monthArrowButton, pressed && styles.pressed]}>
+                <Text style={styles.weekArrowText}>{'<'}</Text>
+              </Pressable>
+              <Pressable
+                accessibilityLabel="Jump to today"
+                accessibilityRole="button"
+                onPress={jumpToTodayFromPicker}
+                style={({ pressed }) => [styles.jumpTodayButton, pressed && styles.pressed]}>
+                <Text style={styles.jumpTodayText}>Jump to today</Text>
+              </Pressable>
+              <Pressable
+                accessibilityLabel="Show next month"
+                accessibilityRole="button"
+                onPress={() =>
+                  setDatePickerMonth((current) =>
+                    format(addMonths(parseISO(current), 1), 'yyyy-MM-dd')
+                  )
+                }
+                style={({ pressed }) => [styles.monthArrowButton, pressed && styles.pressed]}>
+                <Text style={styles.weekArrowText}>{'>'}</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.calendarWeekdays}>
+              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((weekday) => (
+                <Text key={weekday} style={styles.calendarWeekdayText}>
+                  {weekday}
+                </Text>
+              ))}
+            </View>
+
+            <View style={styles.calendarGrid}>
+              {datePickerDays.map((day) => (
+                <Pressable
+                  accessibilityLabel={`Select ${formatDisplayDateDDMMYYYY(day.date)}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: day.isSelected }}
+                  key={day.date}
+                  onPress={() => chooseDateFromPicker(day.date)}
+                  style={({ pressed }) => [
+                    styles.calendarDay,
+                    !day.isCurrentMonth && styles.outsideMonthDay,
+                    day.isToday && styles.todayCalendarDay,
+                    day.isSelected && styles.selectedCalendarDay,
+                    day.isFuture && styles.futureCalendarDay,
+                    pressed && styles.pressed,
+                  ]}>
+                  <Text
+                    style={[
+                      styles.calendarDayText,
+                      !day.isCurrentMonth && styles.outsideMonthDayText,
+                      day.isSelected && styles.selectedCalendarDayText,
+                    ]}>
+                    {day.day}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Text style={styles.modalText}>
+              Future days can be viewed, but cannot be completed.
+            </Text>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         animationType="fade"
@@ -519,6 +994,11 @@ export default function TodayScreen() {
               <Text style={styles.modalText}>
                 Add a short reason for {selectedDateDisplay}. Skipped days are not counted as
                 failures.
+              </Text>
+              <Text style={styles.skipLimitModalText}>
+                {skipsRemainingThisWeek > 0
+                  ? `${skipsRemainingThisWeek} skip left this week.`
+                  : 'You have used your skip for this week.'}
               </Text>
             </View>
 
@@ -548,7 +1028,7 @@ export default function TodayScreen() {
                 variant="secondary"
               />
               <PrimaryButton
-                disabled={skipping}
+                disabled={skipping || skipsRemainingThisWeek <= 0}
                 onPress={submitSkip}
                 title={skipping ? 'Skipping...' : 'Skip habit'}
               />
@@ -576,8 +1056,66 @@ function getDateStripDays(weekStartDate: string, todayDate: string, selectedDate
   });
 }
 
+function getCalendarMonthDays(monthDate: string, todayDate: string, selectedDate: string) {
+  const monthStart = startOfMonth(parseISO(monthDate));
+  const calendarStart = startOfWeek(monthStart, { weekStartsOn: 1 });
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = addDays(calendarStart, index);
+    const dateString = format(date, 'yyyy-MM-dd');
+
+    return {
+      date: dateString,
+      day: format(date, 'd'),
+      isCurrentMonth: format(date, 'yyyy-MM') === format(monthStart, 'yyyy-MM'),
+      isFuture: isFutureDate(dateString, todayDate),
+      isSelected: dateString === selectedDate,
+      isToday: dateString === todayDate,
+    };
+  });
+}
+
 function getWeekStartDateString(date: string) {
   return format(startOfWeek(parseISO(date), { weekStartsOn: 1 }), 'yyyy-MM-dd');
+}
+
+function AnimatedProgressBar({
+  color,
+  height,
+  percent,
+}: {
+  color: string;
+  height: number;
+  percent: number;
+}) {
+  const animatedValue = useRef(new Animated.Value(Math.max(0, Math.min(percent, 1)))).current;
+
+  useEffect(() => {
+    Animated.timing(animatedValue, {
+      toValue: Math.max(0, Math.min(percent, 1)),
+      duration: 220,
+      useNativeDriver: false,
+    }).start();
+  }, [animatedValue, percent]);
+
+  const width = animatedValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0%', '100%'],
+  });
+
+  return (
+    <View style={[styles.animatedProgressTrack, { height }]}>
+      <Animated.View
+        style={[
+          styles.animatedProgressFill,
+          {
+            backgroundColor: color,
+            width,
+          },
+        ]}
+      />
+    </View>
+  );
 }
 
 type TodayHabitCardProps = {
@@ -587,9 +1125,11 @@ type TodayHabitCardProps = {
   skipReason?: string | null;
   progress?: HabitProgress;
   disabled: boolean;
+  progressDisabled: boolean;
   skipDisabled: boolean;
   toggleDisabled: boolean;
   completionDateLabel: string;
+  onEditProgress: (habitId: string) => void;
   onToggle: (habitId: string) => void;
   onSkip: (habitId: string) => void;
   onUndoSkip: (habitId: string) => void;
@@ -603,9 +1143,11 @@ function TodayHabitCard({
   skipReason,
   progress,
   disabled,
+  progressDisabled,
   skipDisabled,
   toggleDisabled,
   completionDateLabel,
+  onEditProgress,
   onToggle,
   onSkip,
   onUndoSkip,
@@ -632,6 +1174,11 @@ function TodayHabitCard({
     onUndoSkip(habit.id);
   }
 
+  function handleEditProgress(event: GestureResponderEvent) {
+    event.stopPropagation();
+    onEditProgress(habit.id);
+  }
+
   return (
     <Pressable
       accessibilityLabel={`Open ${habit.name}. ${statusLabel} for ${completionDateLabel}.`}
@@ -656,7 +1203,7 @@ function TodayHabitCard({
       <View style={styles.habitCardTop}>
         <HabitIcon
           color={accentColor}
-          fallbackIcon={habit.icon ?? habit.name.charAt(0).toUpperCase()}
+          fallbackIcon={habit.icon}
           iconLibrary={habit.iconLibrary}
           iconType={habit.iconType}
           iconValue={habit.iconValue}
@@ -664,9 +1211,18 @@ function TodayHabitCard({
         />
 
         {isProgressHabit ? (
-          <View style={[styles.progressCircle, { borderColor: completed ? colors.primary : accentColor }]}>
+          <Pressable
+            accessibilityLabel={`Update progress for ${habit.name}`}
+            accessibilityRole="button"
+            disabled={disabled || progressDisabled}
+            onPress={handleEditProgress}
+            style={[
+              styles.progressCircle,
+              { borderColor: skipped ? colors.warning : completed ? colors.primary : accentColor },
+              (disabled || progressDisabled) && styles.controlDisabled,
+            ]}>
             <Text style={styles.progressCircleText}>{Math.round(progressPercent * 100)}%</Text>
-          </View>
+          </Pressable>
         ) : (
           <Pressable
             accessibilityLabel={`${completed ? 'Uncheck' : 'Check'} ${
@@ -697,19 +1253,17 @@ function TodayHabitCard({
       </View>
 
       {progress ? (
-        <View style={styles.cardProgressBlock}>
+        <Pressable
+          accessibilityLabel={`Update progress for ${habit.name}`}
+          accessibilityRole="button"
+          disabled={disabled || progressDisabled}
+          onPress={handleEditProgress}
+          style={[styles.cardProgressBlock, (disabled || progressDisabled) && styles.controlDisabled]}>
           <Text numberOfLines={1} style={styles.cardProgressLabel}>
             {progress.label}
           </Text>
-          <View style={styles.cardProgressTrack}>
-            <View
-              style={[
-                styles.cardProgressFill,
-                { width: `${progressPercent * 100}%`, backgroundColor: accentColor },
-              ]}
-            />
-          </View>
-        </View>
+          <AnimatedProgressBar color={accentColor} height={8} percent={progressPercent} />
+        </Pressable>
       ) : null}
 
       <View style={styles.habitCardFooter}>
@@ -925,6 +1479,29 @@ const styles = StyleSheet.create({
     ...typography.body,
     fontWeight: '800',
   },
+  skipLimitPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceElevated,
+  },
+  skipLimitText: {
+    color: colors.warning,
+    ...typography.caption,
+    fontWeight: '900',
+  },
+  animatedProgressTrack: {
+    overflow: 'hidden',
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceMuted,
+  },
+  animatedProgressFill: {
+    height: '100%',
+    borderRadius: radius.pill,
+  },
   buildDayTrack: {
     height: 12,
     overflow: 'hidden',
@@ -935,21 +1512,6 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: radius.pill,
     backgroundColor: colors.primary,
-  },
-  buildDayAddButton: {
-    alignSelf: 'flex-start',
-    minHeight: 40,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.pill,
-    backgroundColor: colors.primary,
-  },
-  buildDayAddText: {
-    color: colors.background,
-    ...typography.caption,
-    fontWeight: '900',
   },
   weekCardConnected: {
     gap: spacing.md,
@@ -1043,6 +1605,8 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.lg,
   },
   weekEyebrow: {
     color: colors.primary,
@@ -1445,6 +2009,194 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl,
     backgroundColor: colors.surface,
   },
+  datePickerCard: {
+    gap: spacing.lg,
+    padding: spacing.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
+    backgroundColor: colors.surface,
+  },
+  datePickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.lg,
+  },
+  datePickerCloseButton: {
+    minHeight: 38,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceElevated,
+  },
+  datePickerCloseText: {
+    color: colors.textMuted,
+    ...typography.caption,
+    fontWeight: '900',
+  },
+  datePickerMonthNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  monthArrowButton: {
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceElevated,
+  },
+  jumpTodayButton: {
+    flex: 1,
+    minHeight: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primaryMuted,
+  },
+  jumpTodayText: {
+    color: colors.primary,
+    ...typography.caption,
+    fontWeight: '900',
+  },
+  calendarWeekdays: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  calendarWeekdayText: {
+    flex: 1,
+    color: colors.textSubtle,
+    ...typography.small,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  calendarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  calendarDay: {
+    width: '13.45%',
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceElevated,
+  },
+  outsideMonthDay: {
+    opacity: 0.34,
+  },
+  todayCalendarDay: {
+    borderColor: colors.primary,
+  },
+  selectedCalendarDay: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  futureCalendarDay: {
+    borderStyle: 'dashed',
+  },
+  calendarDayText: {
+    color: colors.text,
+    ...typography.caption,
+    fontWeight: '900',
+  },
+  outsideMonthDayText: {
+    color: colors.textSubtle,
+  },
+  selectedCalendarDayText: {
+    color: colors.background,
+  },
+  progressEditor: {
+    gap: spacing.lg,
+  },
+  editorList: {
+    gap: spacing.sm,
+  },
+  editorChecklistRow: {
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceElevated,
+  },
+  checkedEditorChecklistRow: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryMuted,
+  },
+  editorCheck: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.surfaceMuted,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+  },
+  checkedEditorCheck: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  editorChecklistText: {
+    flex: 1,
+    color: colors.text,
+    ...typography.caption,
+    fontWeight: '800',
+  },
+  checkedEditorChecklistText: {
+    color: colors.primary,
+  },
+  numericEditor: {
+    gap: spacing.md,
+  },
+  numericTargetText: {
+    color: colors.textMuted,
+    ...typography.caption,
+    fontWeight: '800',
+  },
+  numericInput: {
+    minHeight: 76,
+    paddingHorizontal: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    color: colors.text,
+    backgroundColor: colors.surfaceElevated,
+    fontSize: 32,
+    fontWeight: '900',
+  },
+  numericQuickActions: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  numericStepButton: {
+    flex: 1,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceElevated,
+  },
+  numericStepText: {
+    color: colors.text,
+    ...typography.body,
+    fontWeight: '900',
+  },
   modalHeader: {
     gap: spacing.xs,
   },
@@ -1461,6 +2213,11 @@ const styles = StyleSheet.create({
   modalText: {
     color: colors.textMuted,
     ...typography.caption,
+  },
+  skipLimitModalText: {
+    color: colors.warning,
+    ...typography.caption,
+    fontWeight: '900',
   },
   reasonInput: {
     minHeight: 104,

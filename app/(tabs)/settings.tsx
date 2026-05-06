@@ -1,65 +1,32 @@
-import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useState } from 'react';
-import { Alert, Linking, Share, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Alert, Modal, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { Screen } from '@/src/components/Screen';
 import { getAllCompletions } from '@/src/db/completions';
 import { initDatabase } from '@/src/db/database';
+import {
+  parseImportedLocalData,
+  replaceAllDataWithImportedData,
+  type ImportedLocalData,
+} from '@/src/db/importData';
 import { getAllNumericEntries } from '@/src/db/numericEntries';
 import { resetAllData } from '@/src/db/reset';
 import { getAllHabits } from '@/src/db/habits';
 import { getAllSkips } from '@/src/db/skips';
 import { getAllSettings } from '@/src/db/settings';
 import { getAllSubtaskCompletions, getAllSubtasks } from '@/src/db/subtasks';
-import {
-  cancelHabitReminderForHabit,
-  getNotificationPermissionStatus,
-  requestNotificationPermissions,
-} from '@/src/notifications/notifications';
+import { cancelHabitReminderForHabit } from '@/src/notifications/notifications';
 import { colors, radius, spacing, typography } from '@/src/theme';
 
 export default function SettingsScreen() {
-  const [permissionStatus, setPermissionStatus] = useState('loading');
-  const [requesting, setRequesting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importModalVisible, setImportModalVisible] = useState(false);
+  const [importJsonText, setImportJsonText] = useState('');
+  const [importErrorMessage, setImportErrorMessage] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-
-  const loadPermissionStatus = useCallback(async () => {
-    try {
-      setPermissionStatus(await getNotificationPermissionStatus());
-    } catch (error) {
-      console.error('Failed to load notification permission status', error);
-      setPermissionStatus('unavailable');
-    }
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadPermissionStatus();
-    }, [loadPermissionStatus])
-  );
-
-  async function handleRequestPermission() {
-    try {
-      setRequesting(true);
-      setMessage(null);
-      const granted = await requestNotificationPermissions();
-      await loadPermissionStatus();
-
-      setMessage(
-        granted
-          ? 'Notifications are enabled for habit reminders.'
-          : 'Notifications are not enabled, so reminders cannot be scheduled.'
-      );
-    } catch (error) {
-      console.error('Failed to request notification permission', error);
-      setMessage('Could not request notification permission on this device.');
-    } finally {
-      setRequesting(false);
-    }
-  }
 
   async function handleExportData() {
     try {
@@ -109,6 +76,70 @@ export default function SettingsScreen() {
       setMessage('Could not export local data. Please try again.');
     } finally {
       setExporting(false);
+    }
+  }
+
+  function openImportModal() {
+    setImportJsonText('');
+    setImportErrorMessage(null);
+    setImportModalVisible(true);
+  }
+
+  function confirmImportData() {
+    let importedData: ImportedLocalData;
+
+    try {
+      importedData = parseImportedLocalData(importJsonText);
+      setImportErrorMessage(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not read that import.';
+
+      setImportErrorMessage(message);
+      return;
+    }
+
+    Alert.alert(
+      'Replace local data?',
+      'This will replace all current local habit data on this device with the pasted import. Existing habits, completions, skips, and settings will be removed first.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Replace data',
+          style: 'destructive',
+          onPress: () => handleImportData(importedData),
+        },
+      ]
+    );
+  }
+
+  async function handleImportData(importedData: ImportedLocalData) {
+    try {
+      setImporting(true);
+      setMessage(null);
+      await initDatabase();
+      const habits = await getAllHabits();
+      const cancelResults = await Promise.allSettled(
+        habits.map((habit) => cancelHabitReminderForHabit(habit))
+      );
+
+      for (const result of cancelResults) {
+        if (result.status === 'rejected') {
+          console.error('Failed to cancel a habit reminder during import', result.reason);
+        }
+      }
+
+      await replaceAllDataWithImportedData(importedData);
+      setImportModalVisible(false);
+      setImportJsonText('');
+      setImportErrorMessage(null);
+      setMessage(
+        'Import complete. Reminder schedules were disabled during import; re-enable reminders on habits that need them.'
+      );
+    } catch (error) {
+      console.error('Failed to import local data', error);
+      setImportErrorMessage('Could not import local data. Check the JSON and try again.');
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -170,41 +201,6 @@ export default function SettingsScreen() {
       <View style={styles.sectionCard}>
         <View style={styles.sectionHeader}>
           <View>
-            <Text style={styles.sectionEyebrow}>Notifications</Text>
-            <Text style={styles.cardTitle}>Local reminders</Text>
-          </View>
-          <View style={styles.statusPill}>
-            <Text style={styles.statusValue}>{permissionStatus}</Text>
-          </View>
-        </View>
-
-        <View style={styles.statusRow}>
-          <Text style={styles.statusLabel}>Permission status</Text>
-          <Text style={styles.statusDescription}>
-            {permissionStatus === 'granted'
-              ? 'Reminders can be scheduled on this device.'
-              : 'Enable notifications to schedule habit reminders.'}
-          </Text>
-        </View>
-
-        <View style={styles.actions}>
-          <PrimaryButton
-            disabled={requesting}
-            onPress={handleRequestPermission}
-            title={requesting ? 'Requesting...' : 'Request permission'}
-          />
-          <PrimaryButton
-            disabled={requesting}
-            onPress={() => Linking.openSettings()}
-            title="Open system settings"
-            variant="secondary"
-          />
-        </View>
-      </View>
-
-      <View style={styles.sectionCard}>
-        <View style={styles.sectionHeader}>
-          <View>
             <Text style={styles.sectionEyebrow}>Data</Text>
             <Text style={styles.cardTitle}>Local data</Text>
           </View>
@@ -215,19 +211,81 @@ export default function SettingsScreen() {
         </Text>
         <View style={styles.actions}>
           <PrimaryButton
-            disabled={exporting || resetting}
+            disabled={exporting || importing || resetting}
             onPress={handleExportData}
             title={exporting ? 'Preparing export...' : 'Export local data'}
             variant="secondary"
           />
           <PrimaryButton
-            disabled={exporting || resetting}
+            disabled={exporting || importing || resetting}
+            onPress={openImportModal}
+            title={importing ? 'Importing...' : 'Import local data'}
+            variant="secondary"
+          />
+          <PrimaryButton
+            disabled={exporting || importing || resetting}
             onPress={confirmResetAllData}
             title={resetting ? 'Resetting...' : 'Reset all data'}
             variant="danger"
           />
         </View>
       </View>
+
+      <Modal
+        animationType="slide"
+        onRequestClose={() => {
+          if (!importing) {
+            setImportModalVisible(false);
+          }
+        }}
+        transparent
+        visible={importModalVisible}>
+        <View style={styles.importModalBackdrop}>
+          <View style={styles.importModalCard}>
+            <View style={styles.sectionHeader}>
+              <View>
+                <Text style={styles.sectionEyebrow}>Import</Text>
+                <Text style={styles.cardTitle}>Paste export JSON</Text>
+              </View>
+            </View>
+            <Text style={styles.bodyText}>
+              Replace mode only. The JSON is validated before anything is written.
+            </Text>
+            <TextInput
+              accessibilityLabel="Paste exported JSON"
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!importing}
+              multiline
+              onChangeText={(value) => {
+                setImportJsonText(value);
+                setImportErrorMessage(null);
+              }}
+              placeholder="Paste your exported JSON here"
+              placeholderTextColor={colors.textSubtle}
+              style={styles.importInput}
+              value={importJsonText}
+            />
+            {importErrorMessage ? (
+              <Text style={styles.importErrorText}>{importErrorMessage}</Text>
+            ) : null}
+            <View style={styles.actions}>
+              <PrimaryButton
+                disabled={importing}
+                onPress={() => setImportModalVisible(false)}
+                title="Cancel"
+                variant="secondary"
+              />
+              <PrimaryButton
+                disabled={importing || importJsonText.trim().length === 0}
+                onPress={confirmImportData}
+                title={importing ? 'Importing...' : 'Import and replace'}
+                variant="danger"
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <View style={styles.sectionCard}>
         <View style={styles.sectionHeader}>
@@ -310,37 +368,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     ...typography.heading,
   },
-  statusRow: {
-    gap: spacing.xs,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    backgroundColor: colors.surfaceElevated,
-  },
-  statusLabel: {
-    color: colors.text,
-    ...typography.caption,
-    fontWeight: '900',
-  },
-  statusDescription: {
-    color: colors.textMuted,
-    ...typography.caption,
-  },
-  statusPill: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    borderRadius: radius.pill,
-    backgroundColor: colors.primaryMuted,
-  },
-  statusValue: {
-    color: colors.primary,
-    ...typography.small,
-    fontWeight: '900',
-    textTransform: 'capitalize',
-  },
   messageCard: {
     padding: spacing.lg,
     borderWidth: 1,
@@ -359,6 +386,37 @@ const styles = StyleSheet.create({
   bodyText: {
     color: colors.textMuted,
     ...typography.body,
+  },
+  importModalBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+  },
+  importModalCard: {
+    maxHeight: '88%',
+    gap: spacing.lg,
+    padding: spacing.xl,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  importInput: {
+    minHeight: 260,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    color: colors.text,
+    backgroundColor: colors.surfaceElevated,
+    textAlignVertical: 'top',
+    ...typography.caption,
+  },
+  importErrorText: {
+    color: colors.destructive,
+    ...typography.caption,
+    fontWeight: '700',
   },
   aboutList: {
     gap: spacing.md,

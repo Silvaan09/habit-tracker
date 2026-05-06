@@ -64,6 +64,23 @@ export async function getSkipsForDate(date: string): Promise<HabitSkip[]> {
   return rows.map(mapSkipRow);
 }
 
+export async function getSkipsForDateRange(
+  startDate: string,
+  endDate: string
+): Promise<HabitSkip[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<HabitSkipRow>(
+    `SELECT id, habit_id, date, reason, created_at
+    FROM habit_skips
+    WHERE date >= ? AND date <= ?
+    ORDER BY date ASC, created_at ASC;`,
+    startDate,
+    endDate
+  );
+
+  return rows.map(mapSkipRow);
+}
+
 export async function getSkipsForHabit(habitId: string): Promise<HabitSkip[]> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<HabitSkipRow>(

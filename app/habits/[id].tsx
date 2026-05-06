@@ -270,7 +270,7 @@ export default function HabitDetailScreen() {
         <View style={styles.headerTop}>
           <HabitIcon
             color={habit.color ?? colors.habitGreen}
-            fallbackIcon={habit.icon ?? habit.name.charAt(0).toUpperCase()}
+            fallbackIcon={habit.icon}
             iconLibrary={habit.iconLibrary}
             iconType={habit.iconType}
             iconValue={habit.iconValue}

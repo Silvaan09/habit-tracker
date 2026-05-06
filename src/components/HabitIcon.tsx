@@ -1,10 +1,10 @@
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { getLucideHabitIcon } from '@/src/components/lucideHabitIcons';
 import { colors, radius } from '@/src/theme';
 import type { HabitIconType } from '@/src/types/Habit';
 
-type IconLibrary = 'Ionicons' | 'MaterialCommunityIcons' | string | null | undefined;
+type IconLibrary = 'lucide' | string | null | undefined;
 
 type HabitIconProps = {
   iconType?: HabitIconType | null;
@@ -23,10 +23,10 @@ export function HabitIcon({
   color = colors.habitGreen,
   size = 44,
 }: HabitIconProps) {
-  const symbol = iconValue ?? fallbackIcon;
   const iconSize = Math.max(18, Math.round(size * 0.48));
-  const canRenderVectorIcon = iconType === 'icon' && symbol && hasVectorIcon(iconLibrary, symbol);
-  const textFallbackSymbol = fallbackIcon ?? symbol;
+  const Icon = getLucideHabitIcon(
+    iconType === 'icon' && iconLibrary === 'lucide' ? iconValue : fallbackIcon
+  );
 
   return (
     <View
@@ -39,72 +39,14 @@ export function HabitIcon({
           backgroundColor: color ?? colors.habitGreen,
         },
       ]}>
-      {canRenderVectorIcon ? (
-        <VectorHabitIcon library={iconLibrary} name={symbol} size={iconSize} />
-      ) : (
-        <Text style={[styles.emoji, { fontSize: iconSize }]}>
-          {getFallbackSymbol(textFallbackSymbol)}
-        </Text>
-      )}
+      <Icon color={colors.background} size={iconSize} strokeWidth={2.8} />
     </View>
   );
-}
-
-function VectorHabitIcon({
-  library,
-  name,
-  size,
-}: {
-  library: IconLibrary;
-  name: string;
-  size: number;
-}) {
-  if (library === 'MaterialCommunityIcons') {
-    return (
-      <MaterialCommunityIcons
-        color={colors.background}
-        name={name as React.ComponentProps<typeof MaterialCommunityIcons>['name']}
-        size={size}
-      />
-    );
-  }
-
-  return (
-    <Ionicons
-      color={colors.background}
-      name={name as React.ComponentProps<typeof Ionicons>['name']}
-      size={size}
-    />
-  );
-}
-
-function hasVectorIcon(library: IconLibrary, name: string) {
-  if (library === 'MaterialCommunityIcons') {
-    return Object.prototype.hasOwnProperty.call(MaterialCommunityIcons.glyphMap, name);
-  }
-
-  if (library === 'Ionicons') {
-    return Object.prototype.hasOwnProperty.call(Ionicons.glyphMap, name);
-  }
-
-  return false;
-}
-
-function getFallbackSymbol(symbol: string | null | undefined) {
-  if (!symbol) {
-    return 'H';
-  }
-
-  return Array.from(symbol.trim())[0] || 'H';
 }
 
 const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  emoji: {
-    color: colors.background,
-    fontWeight: '900',
   },
 });

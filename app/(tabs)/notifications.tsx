@@ -140,23 +140,27 @@ export default function NotificationsScreen() {
             <Text style={styles.statusValue}>{permissionStatus}</Text>
           </View>
         </View>
-        <Text style={styles.bodyText}>
-          {permissionStatus === 'granted'
-            ? 'Your device can show scheduled habit reminders.'
-            : 'Enable notifications to receive scheduled habit reminders.'}
-        </Text>
-        <View style={styles.actions}>
-          <PrimaryButton
-            disabled={requesting}
-            onPress={handleRequestPermission}
-            title={requesting ? 'Requesting...' : 'Request permission'}
-          />
-          <PrimaryButton
-            onPress={() => router.push('/settings')}
-            title="Open Settings"
-            variant="secondary"
-          />
-        </View>
+        {permissionStatus === 'granted' ? (
+          <Text style={styles.bodyText}>Your device can show scheduled habit reminders.</Text>
+        ) : (
+          <>
+            <Text style={styles.bodyText}>
+              Enable notifications to receive scheduled habit reminders.
+            </Text>
+            <View style={styles.actions}>
+              <PrimaryButton
+                disabled={requesting}
+                onPress={handleRequestPermission}
+                title={requesting ? 'Requesting...' : 'Request permission'}
+              />
+              <PrimaryButton
+                onPress={() => router.push('/settings')}
+                title="Open Settings"
+                variant="secondary"
+              />
+            </View>
+          </>
+        )}
       </View>
 
       <View style={styles.section}>
@@ -172,7 +176,7 @@ export default function NotificationsScreen() {
               <View key={habit.id} style={styles.reminderRow}>
                 <HabitIcon
                   color={habit.color ?? colors.habitGreen}
-                  fallbackIcon={habit.icon ?? habit.name.charAt(0).toUpperCase()}
+                  fallbackIcon={habit.icon}
                   iconLibrary={habit.iconLibrary}
                   iconType={habit.iconType}
                   iconValue={habit.iconValue}

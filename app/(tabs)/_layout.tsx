@@ -1,11 +1,12 @@
-import { BottomTabBarButtonProps } from '@react-navigation/bottom-tabs';
+import type { BottomTabBarButtonProps } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs, router } from 'expo-router';
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { DeviceEventEmitter, Pressable, StyleSheet, View } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
-import { colors, radius, typography } from '@/src/theme';
+import { colors, radius } from '@/src/theme';
+import { TODAY_TAB_RESELECT_EVENT } from '@/src/utils/navigation';
 
 export default function TabLayout() {
   return (
@@ -33,8 +34,9 @@ export default function TabLayout() {
           fontWeight: '800',
           fontSize: 11,
         },
+        tabBarShowLabel: false,
         tabBarItemStyle: {
-          paddingVertical: 8,
+          paddingVertical: 0,
         },
         headerShown: false,
         tabBarButton: HapticTab,
@@ -46,6 +48,9 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={color} />
           ),
+        }}
+        listeners={{
+          tabPress: () => DeviceEventEmitter.emit(TODAY_TAB_RESELECT_EVENT),
         }}
       />
       <Tabs.Screen
@@ -93,7 +98,7 @@ export default function TabLayout() {
   );
 }
 
-function PlusTabButton({ accessibilityState }: BottomTabBarButtonProps) {
+function PlusTabButton(_: BottomTabBarButtonProps) {
   return (
     <Pressable
       accessibilityLabel="Create a new habit"
@@ -103,9 +108,6 @@ function PlusTabButton({ accessibilityState }: BottomTabBarButtonProps) {
       <View style={styles.plusButton}>
         <Ionicons name="add" size={30} color={colors.background} />
       </View>
-      <Text style={[styles.plusLabel, accessibilityState?.selected && styles.plusLabel]}>
-        New
-      </Text>
     </Pressable>
   );
 }
@@ -115,8 +117,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
-    paddingTop: 2,
   },
   plusButton: {
     width: 56,
@@ -132,12 +132,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.32,
     shadowRadius: 12,
     elevation: 8,
-  },
-  plusLabel: {
-    color: colors.primary,
-    ...typography.small,
-    fontSize: 10,
-    fontWeight: '900',
   },
   pressed: {
     opacity: 0.78,

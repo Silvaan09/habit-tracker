@@ -1,17 +1,22 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { HabitIcon } from '@/src/components/HabitIcon';
 import {
-  IconEmojiPicker,
+  IconPicker,
   type HabitIconSelection,
-} from '@/src/components/IconEmojiPicker';
+} from '@/src/components/IconPicker';
+import { DEFAULT_LUCIDE_HABIT_ICON, LucideCheck } from '@/src/components/lucideHabitIcons';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { TextInputField } from '@/src/components/TextInputField';
 import { colors, radius, spacing, typography } from '@/src/theme';
 import type { HabitIconType, HabitScheduleType, HabitTrackingType } from '@/src/types/Habit';
 import { getTodayDateString } from '@/src/utils/dates';
-import { isValidReminderTime, REMINDER_TIME_VALIDATION_MESSAGE } from '@/src/utils/reminders';
+import {
+  isValidReminderTime,
+  parseReminderTime,
+  REMINDER_TIME_VALIDATION_MESSAGE,
+} from '@/src/utils/reminders';
 
 export type HabitFormValues = {
   name: string;
@@ -43,12 +48,20 @@ type HabitFormProps = {
 };
 
 const COLOR_OPTIONS = [
+  colors.primary,
+  colors.warning,
+  '#FFC247',
+  '#FF9F45',
+  '#FF6F61',
   colors.habitBlue,
+  '#55DDE0',
+  '#4ECDC4',
   colors.habitPink,
   colors.habitPurple,
   colors.habitOrange,
   colors.habitGreen,
-  colors.primary,
+  '#9EF01A',
+  '#8E9AAF',
 ];
 const WEEKDAY_OPTIONS = [
   { label: 'Mon', value: 1 },
@@ -59,6 +72,9 @@ const WEEKDAY_OPTIONS = [
   { label: 'Sat', value: 6 },
   { label: 'Sun', value: 7 },
 ];
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => hour);
+const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, minute) => minute);
+const DEFAULT_HABIT_ICON = DEFAULT_LUCIDE_HABIT_ICON;
 
 export function HabitForm({
   initialValues,
@@ -68,17 +84,31 @@ export function HabitForm({
   onSubmit,
   onCancel,
 }: HabitFormProps) {
+  const initialReminderTime = initialValues?.reminderTime ?? '';
+  const initialParsedReminderTime = parseReminderTime(initialReminderTime);
   const [name, setName] = useState(initialValues?.name ?? '');
   const [description, setDescription] = useState(initialValues?.description ?? '');
   const [selectedIcon, setSelectedIcon] = useState<HabitIconSelection>(() => ({
-    iconType: initialValues?.iconType ?? 'emoji',
-    iconValue: initialValues?.iconValue ?? initialValues?.icon ?? '\u{1F4DA}',
-    iconLibrary: initialValues?.iconLibrary ?? null,
+    iconType: 'icon',
+    iconValue:
+      initialValues?.iconType === 'icon' && initialValues.iconLibrary === 'lucide'
+        ? initialValues.iconValue ?? DEFAULT_HABIT_ICON
+        : DEFAULT_HABIT_ICON,
+    iconLibrary: 'lucide',
   }));
   const [pickerVisible, setPickerVisible] = useState(false);
   const [color, setColor] = useState(initialValues?.color ?? COLOR_OPTIONS[0]);
   const [reminderEnabled, setReminderEnabled] = useState(initialValues?.reminderEnabled ?? false);
-  const [reminderTime, setReminderTime] = useState(initialValues?.reminderTime ?? '');
+  const [reminderTime, setReminderTime] = useState(
+    initialValues?.reminderEnabled && !initialParsedReminderTime ? '08:00' : initialReminderTime
+  );
+  const [timeSelectorVisible, setTimeSelectorVisible] = useState(false);
+  const [draftReminderHour, setDraftReminderHour] = useState(
+    initialParsedReminderTime?.hour ?? 8
+  );
+  const [draftReminderMinute, setDraftReminderMinute] = useState(
+    initialParsedReminderTime?.minute ?? 0
+  );
   const [scheduleType, setScheduleType] = useState<HabitScheduleType>(
     initialValues?.scheduleType ?? 'daily'
   );
@@ -160,7 +190,7 @@ export function HabitForm({
     onSubmit({
       name: trimmedName,
       description: description.trim() || null,
-      icon: selectedIcon.iconType === 'emoji' ? selectedIcon.iconValue : null,
+      icon: null,
       iconType: selectedIcon.iconType,
       iconValue: selectedIcon.iconValue,
       iconLibrary: selectedIcon.iconLibrary,
@@ -183,7 +213,42 @@ export function HabitForm({
       return;
     }
 
-    setReminderEnabled((current) => !current);
+    setReminderEnabled((current) => {
+      const nextValue = !current;
+
+      if (nextValue && !isValidReminderTime(reminderTime)) {
+        setReminderTime('08:00');
+        setDraftReminderHour(8);
+        setDraftReminderMinute(0);
+      }
+
+      return nextValue;
+    });
+  }
+
+  function handleReminderSwitch(value: boolean) {
+    if (value && !isValidReminderTime(reminderTime)) {
+      setReminderTime('08:00');
+      setDraftReminderHour(8);
+      setDraftReminderMinute(0);
+    }
+
+    setReminderEnabled(value);
+  }
+
+  function openTimeSelector() {
+    const parsedTime = parseReminderTime(reminderTime);
+
+    setDraftReminderHour(parsedTime?.hour ?? 8);
+    setDraftReminderMinute(parsedTime?.minute ?? 0);
+    setReminderTimeValidationMessage(null);
+    setTimeSelectorVisible(true);
+  }
+
+  function saveReminderTime() {
+    setReminderTime(`${padTimePart(draftReminderHour)}:${padTimePart(draftReminderMinute)}`);
+    setReminderTimeValidationMessage(null);
+    setTimeSelectorVisible(false);
   }
 
   function updateSubtaskTitle(index: number, value: string) {
@@ -259,7 +324,6 @@ export function HabitForm({
         <TextInputField
           autoCapitalize="sentences"
           editable={!saving}
-          helper="Optional. Add a short note about what this habit means."
           label="Description"
           multiline
           onChangeText={setDescription}
@@ -270,9 +334,9 @@ export function HabitForm({
 
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Icon</Text>
-          <Text style={styles.helperText}>Choose an emoji or a simple line icon.</Text>
+          <Text style={styles.helperText}>Choose your icon for this habit.</Text>
           <Pressable
-            accessibilityLabel="Open icon and emoji picker"
+            accessibilityLabel="Open icon picker"
             accessibilityRole="button"
             disabled={saving}
             onPress={() => setPickerVisible(true)}
@@ -283,15 +347,16 @@ export function HabitForm({
             ]}>
             <HabitIcon
               color={color}
+              fallbackIcon={DEFAULT_HABIT_ICON}
               iconLibrary={selectedIcon.iconLibrary}
               iconType={selectedIcon.iconType}
-              iconValue={selectedIcon.iconValue}
+              iconValue={selectedIcon.iconValue ?? DEFAULT_HABIT_ICON}
               size={58}
             />
             <View style={styles.iconPickerText}>
-              <Text style={styles.iconPickerTitle}>Selected symbol</Text>
+              <Text style={styles.iconPickerTitle}>Selected icon</Text>
               <Text style={styles.iconPickerMeta}>
-                {selectedIcon.iconType === 'emoji' ? 'Emoji' : 'Vector icon'} - tap to change
+                tap to change
               </Text>
             </View>
           </Pressable>
@@ -313,7 +378,11 @@ export function HabitForm({
                   color === option && styles.selectedSwatchButton,
                   saving && styles.disabled,
                 ]}>
-                <View style={[styles.swatch, { backgroundColor: option }]} />
+                <View style={[styles.swatch, { backgroundColor: option }]}>
+                  {color === option ? (
+                    <LucideCheck size={16} color={colors.background} strokeWidth={3.2} />
+                  ) : null}
+                </View>
               </Pressable>
             ))}
           </View>
@@ -593,7 +662,7 @@ export function HabitForm({
           <Text style={styles.reminderState}>{reminderEnabled ? 'On' : 'Off'}</Text>
           <Switch
             disabled={saving}
-            onValueChange={setReminderEnabled}
+            onValueChange={handleReminderSwitch}
             pointerEvents="none"
             thumbColor={reminderEnabled ? colors.primary : colors.textMuted}
             trackColor={{ false: colors.surfaceMuted, true: colors.primaryMuted }}
@@ -602,18 +671,29 @@ export function HabitForm({
         </Pressable>
 
         {reminderEnabled ? (
-          <TextInputField
-            editable={!saving}
-            error={reminderTimeValidationMessage}
-            helper="Use 24-hour time like 08:00 or 21:30."
-            label="Reminder time"
-            onChangeText={(value) => {
-              setReminderTime(value);
-              setReminderTimeValidationMessage(null);
-            }}
-            placeholder="08:00"
-            value={reminderTime ?? ''}
-          />
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Reminder time</Text>
+            <Text style={styles.helperText}>Choose a local daily reminder time.</Text>
+            <Pressable
+              accessibilityLabel="Open reminder time selector"
+              accessibilityRole="button"
+              disabled={saving}
+              onPress={openTimeSelector}
+              style={({ pressed }) => [
+                styles.timeSelectorButton,
+                pressed && styles.pressed,
+                saving && styles.disabled,
+              ]}>
+              <View>
+                <Text style={styles.timeSelectorLabel}>Selected time</Text>
+                <Text style={styles.timeSelectorValue}>{reminderTime || '08:00'}</Text>
+              </View>
+              <Text style={styles.timeSelectorAction}>Change</Text>
+            </Pressable>
+            {reminderTimeValidationMessage ? (
+              <Text style={styles.scheduleError}>{reminderTimeValidationMessage}</Text>
+            ) : null}
+          </View>
         ) : (
           <View style={styles.disabledReminderTime}>
             <Text style={styles.disabledReminderLabel}>Reminder time</Text>
@@ -627,10 +707,10 @@ export function HabitForm({
         <View style={styles.previewRow}>
           <HabitIcon
             color={color}
-            fallbackIcon={previewName.charAt(0).toUpperCase()}
+            fallbackIcon={DEFAULT_HABIT_ICON}
             iconLibrary={selectedIcon.iconLibrary}
             iconType={selectedIcon.iconType}
-            iconValue={selectedIcon.iconValue}
+            iconValue={selectedIcon.iconValue ?? DEFAULT_HABIT_ICON}
             size={58}
           />
           <View style={styles.previewText}>
@@ -658,13 +738,98 @@ export function HabitForm({
         <PrimaryButton disabled={saving} onPress={onCancel} title="Cancel" variant="secondary" />
       </View>
 
-      <IconEmojiPicker
+      <IconPicker
         accentColor={color}
         onClose={() => setPickerVisible(false)}
         onSelect={setSelectedIcon}
         selected={selectedIcon}
         visible={pickerVisible}
       />
+
+      <Modal
+        animationType="slide"
+        onRequestClose={() => setTimeSelectorVisible(false)}
+        transparent
+        visible={timeSelectorVisible}>
+        <View style={styles.timeModalBackdrop}>
+          <View style={styles.timeModalCard}>
+            <View style={styles.timeModalHeader}>
+              <Text style={styles.sectionEyebrow}>Reminder time</Text>
+              <Text style={styles.timeModalTitle}>
+                {padTimePart(draftReminderHour)}:{padTimePart(draftReminderMinute)}
+              </Text>
+              <Text style={styles.helperText}>Pick an hour and minute. Times are stored as HH:mm.</Text>
+            </View>
+
+            <View style={styles.timeColumns}>
+              <View style={styles.timeColumn}>
+                <Text style={styles.label}>Hour</Text>
+                <ScrollView
+                  style={styles.timeOptionsScroll}
+                  contentContainerStyle={styles.timeOptionGrid}>
+                  {HOUR_OPTIONS.map((hour) => (
+                    <Pressable
+                      accessibilityLabel={`Select hour ${padTimePart(hour)}`}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: draftReminderHour === hour }}
+                      key={hour}
+                      onPress={() => setDraftReminderHour(hour)}
+                      style={[
+                        styles.timeOption,
+                        draftReminderHour === hour && styles.selectedTimeOption,
+                      ]}>
+                      <Text
+                        style={[
+                          styles.timeOptionText,
+                          draftReminderHour === hour && styles.selectedTimeOptionText,
+                        ]}>
+                        {padTimePart(hour)}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+
+              <View style={styles.timeColumn}>
+                <Text style={styles.label}>Minute</Text>
+                <ScrollView
+                  style={styles.timeOptionsScroll}
+                  contentContainerStyle={styles.timeOptionGrid}>
+                  {MINUTE_OPTIONS.map((minute) => (
+                    <Pressable
+                      accessibilityLabel={`Select minute ${padTimePart(minute)}`}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: draftReminderMinute === minute }}
+                      key={minute}
+                      onPress={() => setDraftReminderMinute(minute)}
+                      style={[
+                        styles.timeOption,
+                        draftReminderMinute === minute && styles.selectedTimeOption,
+                      ]}>
+                      <Text
+                        style={[
+                          styles.timeOptionText,
+                          draftReminderMinute === minute && styles.selectedTimeOptionText,
+                        ]}>
+                        {padTimePart(minute)}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+
+            <View style={styles.timeModalActions}>
+              <PrimaryButton
+                onPress={() => setTimeSelectorVisible(false)}
+                title="Cancel"
+                variant="secondary"
+              />
+              <PrimaryButton onPress={saveReminderTime} title="Save time" />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -761,6 +926,10 @@ function isDateString(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
+function padTimePart(value: number) {
+  return String(value).padStart(2, '0');
+}
+
 const styles = StyleSheet.create({
   form: {
     gap: spacing.lg,
@@ -846,6 +1015,8 @@ const styles = StyleSheet.create({
   swatch: {
     width: 30,
     height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: radius.pill,
   },
   scheduleTypeGrid: {
@@ -1027,6 +1198,100 @@ const styles = StyleSheet.create({
   disabledReminderText: {
     color: colors.textSubtle,
     ...typography.caption,
+  },
+  timeSelectorButton: {
+    minHeight: 82,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceElevated,
+  },
+  timeSelectorLabel: {
+    color: colors.textMuted,
+    ...typography.caption,
+    fontWeight: '800',
+  },
+  timeSelectorValue: {
+    color: colors.text,
+    fontSize: 34,
+    lineHeight: 40,
+    fontWeight: '900',
+  },
+  timeSelectorAction: {
+    color: colors.primary,
+    ...typography.caption,
+    fontWeight: '900',
+  },
+  timeModalBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+  },
+  timeModalCard: {
+    maxHeight: '88%',
+    gap: spacing.lg,
+    padding: spacing.xl,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  timeModalHeader: {
+    gap: spacing.xs,
+  },
+  timeModalTitle: {
+    color: colors.text,
+    fontSize: 42,
+    lineHeight: 48,
+    fontWeight: '900',
+  },
+  timeColumns: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  timeColumn: {
+    flex: 1,
+    gap: spacing.sm,
+  },
+  timeOptionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    paddingBottom: spacing.md,
+  },
+  timeOptionsScroll: {
+    maxHeight: 238,
+  },
+  timeOption: {
+    width: 48,
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceElevated,
+  },
+  selectedTimeOption: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  timeOptionText: {
+    color: colors.textMuted,
+    ...typography.caption,
+    fontWeight: '900',
+  },
+  selectedTimeOptionText: {
+    color: colors.background,
+  },
+  timeModalActions: {
+    gap: spacing.md,
   },
   previewCard: {
     gap: spacing.md,

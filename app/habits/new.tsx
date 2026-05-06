@@ -8,6 +8,7 @@ import { createHabit, updateHabitNotificationId } from '@/src/db/habits';
 import { createSubtask } from '@/src/db/subtasks';
 import { rescheduleHabitReminderForHabit } from '@/src/notifications/notifications';
 import { colors, radius, spacing, typography } from '@/src/theme';
+import { safeBack } from '@/src/utils/navigation';
 
 export default function NewHabitScreen() {
   const [saving, setSaving] = useState(false);
@@ -60,7 +61,7 @@ export default function NewHabitScreen() {
 
       <HabitForm
         error={errorMessage}
-        onCancel={() => router.back()}
+        onCancel={() => safeBack('/')}
         onSubmit={handleSubmit}
         saving={saving}
         submitTitle="Save Habit"

@@ -21,6 +21,7 @@ import {
 } from '@/src/notifications/notifications';
 import { colors, radius, spacing, typography } from '@/src/theme';
 import type { Habit, HabitSubtask } from '@/src/types/Habit';
+import { safeBack } from '@/src/utils/navigation';
 
 export default function EditHabitScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -105,7 +106,7 @@ export default function EditHabitScreen() {
         }
       }
 
-      router.back();
+      safeBack({ pathname: '/habits/[id]', params: { id: habitId } });
     } catch (error) {
       console.error('Failed to update habit', error);
       setErrorMessage('Could not save your changes. Please try again.');
@@ -153,7 +154,7 @@ export default function EditHabitScreen() {
               ? subtasks.map((subtask) => subtask.title)
               : undefined,
         }}
-        onCancel={() => router.back()}
+        onCancel={() => safeBack({ pathname: '/habits/[id]', params: { id: habitId } })}
         onSubmit={handleSubmit}
         saving={saving}
         submitTitle="Save Changes"

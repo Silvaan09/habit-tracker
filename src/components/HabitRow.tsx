@@ -89,7 +89,7 @@ export function HabitRow({
       ]}>
       <HabitIcon
         color={accentColor}
-        fallbackIcon={habit.icon ?? habit.name.charAt(0).toUpperCase()}
+        fallbackIcon={habit.icon}
         iconLibrary={habit.iconLibrary}
         iconType={habit.iconType}
         iconValue={habit.iconValue}

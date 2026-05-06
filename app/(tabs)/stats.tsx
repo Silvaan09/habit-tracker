@@ -273,7 +273,7 @@ export default function StatsScreen() {
                   <View key={item.habit.id} style={styles.habitRow}>
                     <HabitIcon
                       color={item.habit.color ?? colors.habitGreen}
-                      fallbackIcon={item.habit.icon ?? item.habit.name.charAt(0).toUpperCase()}
+                      fallbackIcon={item.habit.icon}
                       iconLibrary={item.habit.iconLibrary}
                       iconType={item.habit.iconType}
                       iconValue={item.habit.iconValue}
@@ -729,4 +729,3 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
-

@@ -1,11 +1,14 @@
+import { Ionicons } from '@expo/vector-icons';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { Pressable, StyleSheet } from 'react-native';
 import 'react-native-reanimated';
 
 import '@/src/notifications/notifications';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { colors } from '@/src/theme';
+import { colors, radius } from '@/src/theme';
+import { safeBack } from '@/src/utils/navigation';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -33,6 +36,16 @@ export default function RootLayout() {
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.text,
           headerTitleStyle: { fontWeight: '900' },
+          headerLeft: () => (
+            <Pressable
+              accessibilityLabel="Go back"
+              accessibilityRole="button"
+              hitSlop={10}
+              onPress={() => safeBack('/')}
+              style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}>
+              <Ionicons name="chevron-back" size={22} color={colors.text} />
+            </Pressable>
+          ),
         }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="habits/new" options={{ title: 'New habit' }} />
@@ -43,3 +56,19 @@ export default function RootLayout() {
     </ThemeProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  backButton: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceElevated,
+  },
+  pressed: {
+    opacity: 0.72,
+  },
+});
