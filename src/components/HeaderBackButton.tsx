@@ -3,6 +3,7 @@ import { router } from 'expo-router';
 import { Pressable, StyleSheet } from 'react-native';
 
 import { colors } from '@/src/theme';
+import { handleGuardedHeaderBack } from '@/src/utils/backGuard';
 
 const BUTTON_SIZE = 40;
 
@@ -16,6 +17,10 @@ export function HeaderBackButton({
   onPress,
 }: HeaderBackButtonProps) {
   function handlePress() {
+    if (handleGuardedHeaderBack()) {
+      return;
+    }
+
     if (onPress) {
       onPress();
       return;

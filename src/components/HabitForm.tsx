@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { HabitIcon } from '@/src/components/HabitIcon';
@@ -48,6 +48,8 @@ type HabitFormProps = {
   error?: string | null;
   onSubmit: (values: HabitFormValues) => void;
   onCancel: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
+  submitRequestKey?: number;
 };
 
 const COLOR_OPTIONS = [
@@ -85,6 +87,8 @@ export function HabitForm({
   error,
   onSubmit,
   onCancel,
+  onDirtyChange,
+  submitRequestKey,
 }: HabitFormProps) {
   const initialReminderTime = initialValues?.reminderTime ?? '';
   const [name, setName] = useState(initialValues?.name ?? '');
@@ -139,6 +143,61 @@ export function HabitForm({
   );
   const [scheduleValidationMessage, setScheduleValidationMessage] = useState<string | null>(null);
   const [trackingValidationMessage, setTrackingValidationMessage] = useState<string | null>(null);
+  const currentSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        color,
+        description,
+        iconLibrary: selectedIcon.iconLibrary,
+        iconType: selectedIcon.iconType,
+        iconValue: selectedIcon.iconValue,
+        name,
+        reminderEnabled,
+        reminderTime,
+        scheduleOffDays,
+        scheduleOnDays,
+        scheduleStartDate,
+        scheduleType,
+        scheduleWeekdays,
+        subtaskTitles,
+        targetUnit,
+        targetValue,
+        trackingType,
+      }),
+    [
+      color,
+      description,
+      name,
+      reminderEnabled,
+      reminderTime,
+      scheduleOffDays,
+      scheduleOnDays,
+      scheduleStartDate,
+      scheduleType,
+      scheduleWeekdays,
+      selectedIcon.iconLibrary,
+      selectedIcon.iconType,
+      selectedIcon.iconValue,
+      subtaskTitles,
+      targetUnit,
+      targetValue,
+      trackingType,
+    ]
+  );
+  const initialSnapshot = useRef(currentSnapshot);
+  const dirty = currentSnapshot !== initialSnapshot.current;
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
+  useEffect(() => {
+    if (submitRequestKey) {
+      handleSubmit();
+    }
+    // handleSubmit intentionally reads the latest form state for this explicit submit signal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [submitRequestKey]);
 
   function handleSubmit() {
     const trimmedName = name.trim();

@@ -1,7 +1,7 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 
 import { EmptyState } from '@/src/components/EmptyState';
 import { HabitForm, type HabitFormValues } from '@/src/components/HabitForm';
@@ -21,6 +21,7 @@ import {
 } from '@/src/notifications/notifications';
 import { colors, radius, spacing, typography } from '@/src/theme';
 import type { Habit, HabitSubtask } from '@/src/types/Habit';
+import { setHeaderBackHandler } from '@/src/utils/backGuard';
 import { safeBack } from '@/src/utils/navigation';
 
 export default function EditHabitScreen() {
@@ -31,6 +32,39 @@ export default function EditHabitScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [formDirty, setFormDirty] = useState(false);
+  const [submitRequestKey, setSubmitRequestKey] = useState(0);
+  const fallbackRoute = useCallback(() => {
+    safeBack({ pathname: '/habits/[id]', params: { id: habitId ?? '' } });
+  }, [habitId]);
+
+  const promptForUnsavedChanges = useCallback(() => {
+    Alert.alert('Save changes?', 'You have unsaved changes.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: fallbackRoute },
+      { text: 'Save', onPress: () => setSubmitRequestKey((current) => current + 1) },
+    ]);
+  }, [fallbackRoute]);
+
+  const requestLeave = useCallback(() => {
+    if (saving || !formDirty) {
+      fallbackRoute();
+      return;
+    }
+
+    promptForUnsavedChanges();
+  }, [fallbackRoute, formDirty, promptForUnsavedChanges, saving]);
+
+  useEffect(() => {
+    return setHeaderBackHandler(() => {
+      if (saving || !formDirty) {
+        return false;
+      }
+
+      promptForUnsavedChanges();
+      return true;
+    });
+  }, [formDirty, promptForUnsavedChanges, saving]);
 
   useFocusEffect(
     useCallback(() => {
@@ -154,9 +188,11 @@ export default function EditHabitScreen() {
               ? subtasks.map((subtask) => subtask.title)
               : undefined,
         }}
-        onCancel={() => safeBack({ pathname: '/habits/[id]', params: { id: habitId } })}
+        onCancel={requestLeave}
+        onDirtyChange={setFormDirty}
         onSubmit={handleSubmit}
         saving={saving}
+        submitRequestKey={submitRequestKey}
         submitTitle="Save Changes"
       />
     </Screen>

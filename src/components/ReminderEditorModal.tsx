@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { BottomSheetModal } from '@/src/components/BottomSheetModal';
 import { HabitIcon } from '@/src/components/HabitIcon';
@@ -38,6 +38,11 @@ export function ReminderEditorModal({
   const [saving, setSaving] = useState(false);
   const [requesting, setRequesting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const reminderDirty = Boolean(
+    habit &&
+      (reminderEnabled !== habit.reminderEnabled ||
+        reminderTime !== (habit.reminderTime || '08:00'))
+  );
 
   useEffect(() => {
     if (!visible || !habit) {
@@ -121,8 +126,25 @@ export function ReminderEditorModal({
     }
   }
 
+  function requestClose() {
+    if (saving || requesting) {
+      return;
+    }
+
+    if (!reminderDirty) {
+      onClose();
+      return;
+    }
+
+    Alert.alert('Save changes?', 'You have unsaved reminder changes.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: onClose },
+      { text: 'Save', onPress: () => void saveReminder() },
+    ]);
+  }
+
   return (
-    <BottomSheetModal onRequestClose={onClose} sheetStyle={styles.card} visible={visible}>
+    <BottomSheetModal onRequestClose={requestClose} sheetStyle={styles.card} visible={visible}>
       {habit ? (
         <>
           <View style={styles.header}>
@@ -198,7 +220,7 @@ export function ReminderEditorModal({
           {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
           <View style={styles.actions}>
-            <PrimaryButton disabled={saving} onPress={onClose} title="Cancel" variant="secondary" />
+            <PrimaryButton disabled={saving} onPress={requestClose} title="Cancel" variant="secondary" />
             <PrimaryButton
               disabled={saving}
               onPress={saveReminder}

@@ -20,6 +20,7 @@ import {
   NativeSyntheticEvent,
   PanResponder,
   Pressable,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -157,6 +158,7 @@ export default function TodayScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [busyHabitIds, setBusyHabitIds] = useState<Record<string, boolean>>({});
   const [skipTargetHabitId, setSkipTargetHabitId] = useState<string | null>(null);
+  const [skipLimitModalVisible, setSkipLimitModalVisible] = useState(false);
   const [skipReason, setSkipReason] = useState('');
   const [skipReasonError, setSkipReasonError] = useState<string | null>(null);
   const [skipping, setSkipping] = useState(false);
@@ -175,6 +177,7 @@ export default function TodayScreen() {
     HabitSubtaskCompletion[]
   >([]);
   const [editorNumericValue, setEditorNumericValue] = useState('');
+  const [editorInitialNumericValue, setEditorInitialNumericValue] = useState('');
   const [savingProgress, setSavingProgress] = useState(false);
 
   const loadTodayData = useCallback(async (dateToLoad: string) => {
@@ -463,6 +466,7 @@ export default function TodayScreen() {
     () => getCalendarMonthDays(datePickerMonth, actualTodayDate, selectedDate),
     [actualTodayDate, datePickerMonth, selectedDate]
   );
+  const datePickerWeeks = useMemo(() => chunkCalendarWeeks(datePickerDays), [datePickerDays]);
   const datePickerMonthLabel = useMemo(
     () => format(parseISO(datePickerMonth), 'MMMM yyyy'),
     [datePickerMonth]
@@ -556,15 +560,13 @@ export default function TodayScreen() {
     }
 
     if (skipsRemainingThisWeek <= 0 && !skippedHabitIds.has(habitId)) {
-      setErrorMessage('You have used your skip for this week.');
+      setSkipLimitModalVisible(true);
       return;
     }
 
     setSkipTargetHabitId(habitId);
     setSkipReason('');
-    setSkipReasonError(
-      skipsRemainingThisWeek > 0 ? `${skipsRemainingThisWeek} skip left this week.` : null
-    );
+    setSkipReasonError(null);
   }
 
   function closeSkipModal() {
@@ -662,10 +664,12 @@ export default function TodayScreen() {
 
       if (habit.trackingType === 'numeric') {
         const entry = await getNumericEntryForDate(habit.id, selectedDate);
+        const nextValue = entry ? String(entry.value) : '0';
 
         setEditorSubtasks([]);
         setEditorSubtaskCompletions([]);
-        setEditorNumericValue(entry ? String(entry.value) : '0');
+        setEditorNumericValue(nextValue);
+        setEditorInitialNumericValue(nextValue);
       }
     } catch (error) {
       console.error('Failed to load Today progress editor', error);
@@ -675,16 +679,33 @@ export default function TodayScreen() {
     }
   }
 
-  function closeProgressEditor() {
-    if (savingProgress) {
-      return;
-    }
-
+  function dismissProgressEditor() {
     setProgressEditorHabitId(null);
     setProgressEditorError(null);
     setEditorSubtasks([]);
     setEditorSubtaskCompletions([]);
     setEditorNumericValue('');
+    setEditorInitialNumericValue('');
+  }
+
+  function closeProgressEditor() {
+    if (savingProgress) {
+      return;
+    }
+
+    if (
+      progressEditorHabit?.trackingType === 'numeric' &&
+      normalizeNumericDraft(editorNumericValue) !== normalizeNumericDraft(editorInitialNumericValue)
+    ) {
+      Alert.alert('Save changes?', 'You have unsaved progress changes.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Discard', style: 'destructive', onPress: dismissProgressEditor },
+        { text: 'Save', onPress: () => void saveEditorNumericProgress() },
+      ]);
+      return;
+    }
+
+    dismissProgressEditor();
   }
 
   async function toggleEditorSubtask(subtask: HabitSubtask) {
@@ -737,10 +758,8 @@ export default function TodayScreen() {
       setProgressEditorError(null);
       setBusyHabitIds((current) => ({ ...current, [progressEditorHabit.id]: true }));
       await setNumericEntryForDate(progressEditorHabit.id, selectedDate, parsedValue);
-      const nextEntry = await getNumericEntryForDate(progressEditorHabit.id, selectedDate);
-
-      setEditorNumericValue(nextEntry ? String(nextEntry.value) : '0');
       await refreshSelectedDateStatuses();
+      dismissProgressEditor();
     } catch (error) {
       console.error('Failed to update numeric progress from Today', error);
       setProgressEditorError('Could not save progress.');
@@ -752,13 +771,13 @@ export default function TodayScreen() {
     }
   }
 
-  async function adjustEditorNumericProgress(delta: number) {
+  function adjustEditorNumericProgress(delta: number) {
     const currentValue = Number(editorNumericValue.replace(',', '.'));
     const safeCurrentValue = Number.isFinite(currentValue) ? currentValue : 0;
     const nextValue = Math.max(0, safeCurrentValue + delta);
 
     setEditorNumericValue(formatProgressNumber(nextValue));
-    await saveEditorNumericProgress(String(nextValue));
+    setProgressEditorError(null);
   }
 
   function openNewHabitScreen() {
@@ -1169,11 +1188,6 @@ export default function TodayScreen() {
                         <Text style={styles.numericStepText}>+1</Text>
                       </Pressable>
                     </View>
-                    <PrimaryButton
-                      disabled={savingProgress}
-                      onPress={() => saveEditorNumericProgress()}
-                      title={savingProgress ? 'Saving...' : 'Save progress'}
-                    />
                   </View>
                 )}
 
@@ -1181,25 +1195,27 @@ export default function TodayScreen() {
                   <Text style={styles.reasonError}>{progressEditorError}</Text>
                 ) : null}
 
-                <View style={styles.modalActions}>
+                {progressEditorHabit.trackingType === 'subtasks' ? (
                   <PrimaryButton
                     disabled={savingProgress}
                     onPress={closeProgressEditor}
                     title="Close"
-                    variant="secondary"
                   />
-                  <PrimaryButton
-                    disabled={savingProgress}
-                    onPress={() => {
-                      const habitId = progressEditorHabit.id;
-
-                      closeProgressEditor();
-                      openHabitDetail(habitId);
-                    }}
-                    title="Open detail"
-                    variant="secondary"
-                  />
-                </View>
+                ) : (
+                  <View style={styles.modalActions}>
+                    <PrimaryButton
+                      disabled={savingProgress}
+                      onPress={closeProgressEditor}
+                      title="Cancel"
+                      variant="secondary"
+                    />
+                    <PrimaryButton
+                      disabled={savingProgress}
+                      onPress={() => saveEditorNumericProgress()}
+                      title={savingProgress ? 'Saving...' : 'Save progress'}
+                    />
+                  </View>
+                )}
           </View>
         ) : null}
       </BottomSheetModal>
@@ -1389,36 +1405,36 @@ export default function TodayScreen() {
             </View>
 
             <View style={styles.calendarGrid}>
-              {datePickerDays.map((day) => (
-                <Pressable
-                  accessibilityLabel={`Select ${formatDisplayDateDDMMYYYY(day.date)}`}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: day.isSelected }}
-                  key={day.date}
-                  onPress={() => chooseDateFromPicker(day.date)}
-                  style={({ pressed }) => [
-                    styles.calendarDay,
-                    !day.isCurrentMonth && styles.outsideMonthDay,
-                    day.isToday && styles.todayCalendarDay,
-                    day.isSelected && styles.selectedCalendarDay,
-                    day.isFuture && styles.futureCalendarDay,
-                    pressed && styles.pressed,
-                  ]}>
-                  <Text
-                    style={[
-                      styles.calendarDayText,
-                      !day.isCurrentMonth && styles.outsideMonthDayText,
-                      day.isSelected && styles.selectedCalendarDayText,
-                    ]}>
-                    {day.day}
-                  </Text>
-                </Pressable>
+              {datePickerWeeks.map((week) => (
+                <View key={week.map((day) => day.date).join('-')} style={styles.calendarWeekRow}>
+                  {week.map((day) => (
+                    <Pressable
+                      accessibilityLabel={`Select ${formatDisplayDateDDMMYYYY(day.date)}`}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: day.isSelected }}
+                      key={day.date}
+                      onPress={() => chooseDateFromPicker(day.date)}
+                      style={({ pressed }) => [
+                        styles.calendarDay,
+                        !day.isCurrentMonth && styles.outsideMonthDay,
+                        day.isToday && styles.todayCalendarDay,
+                        day.isSelected && styles.selectedCalendarDay,
+                        day.isFuture && styles.futureCalendarDay,
+                        pressed && styles.pressed,
+                      ]}>
+                      <Text
+                        style={[
+                          styles.calendarDayText,
+                          !day.isCurrentMonth && styles.outsideMonthDayText,
+                          day.isSelected && styles.selectedCalendarDayText,
+                        ]}>
+                        {day.day}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
               ))}
             </View>
-
-            <Text style={styles.modalText}>
-              Future days can be viewed, but cannot be completed.
-            </Text>
       </BottomSheetModal>
 
       <BottomSheetModal
@@ -1471,6 +1487,20 @@ export default function TodayScreen() {
               />
             </View>
       </BottomSheetModal>
+
+      <BottomSheetModal
+        onRequestClose={() => setSkipLimitModalVisible(false)}
+        sheetStyle={styles.modalCard}
+        visible={skipLimitModalVisible}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalEyebrow}>Skip limit</Text>
+              <Text style={styles.modalTitle}>No skips left this week</Text>
+              <Text style={styles.modalText}>
+                {"You've already used your skip for this week."}
+              </Text>
+            </View>
+            <PrimaryButton onPress={() => setSkipLimitModalVisible(false)} title="Close" />
+      </BottomSheetModal>
     </Screen>
   );
 }
@@ -1508,6 +1538,12 @@ function getCalendarMonthDays(monthDate: string, todayDate: string, selectedDate
       isToday: dateString === todayDate,
     };
   });
+}
+
+function chunkCalendarWeeks<T>(days: T[]) {
+  return Array.from({ length: Math.ceil(days.length / 7) }, (_, index) =>
+    days.slice(index * 7, index * 7 + 7)
+  );
 }
 
 function getWeekStartDateString(date: string) {
@@ -2425,6 +2461,12 @@ function formatProgressNumber(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
+function normalizeNumericDraft(value: string) {
+  const parsedValue = Number(value.replace(',', '.'));
+
+  return Number.isFinite(parsedValue) ? formatProgressNumber(Math.max(0, parsedValue)) : '0';
+}
+
 function getSelectedDayLabel(selectedDate: string, todayDate: string) {
   if (selectedDate === todayDate) {
     return 'TODAY';
@@ -3234,15 +3276,18 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   calendarGrid: {
+    gap: spacing.xs,
+  },
+  calendarWeekRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: spacing.xs,
   },
   calendarDay: {
-    width: '13.45%',
+    flex: 1,
     aspectRatio: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 0,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
@@ -3263,8 +3308,11 @@ const styles = StyleSheet.create({
   },
   calendarDayText: {
     color: colors.text,
-    ...typography.caption,
+    fontSize: 13,
+    lineHeight: 16,
     fontWeight: '900',
+    textAlign: 'center',
+    includeFontPadding: false,
   },
   outsideMonthDayText: {
     color: colors.textSubtle,

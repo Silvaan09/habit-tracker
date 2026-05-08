@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 
 import { HabitForm, type HabitFormValues } from '@/src/components/HabitForm';
@@ -8,11 +8,46 @@ import { createHabit, updateHabitNotificationId } from '@/src/db/habits';
 import { createSubtask } from '@/src/db/subtasks';
 import { rescheduleHabitReminderForHabit } from '@/src/notifications/notifications';
 import { colors, spacing, typography } from '@/src/theme';
+import { setHeaderBackHandler } from '@/src/utils/backGuard';
 import { safeBack } from '@/src/utils/navigation';
 
 export default function NewHabitScreen() {
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [formDirty, setFormDirty] = useState(false);
+  const [submitRequestKey, setSubmitRequestKey] = useState(0);
+
+  const leaveScreen = useCallback(() => {
+    safeBack('/');
+  }, []);
+
+  const promptForUnsavedChanges = useCallback(() => {
+    Alert.alert('Save changes?', 'You have unsaved changes.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: leaveScreen },
+      { text: 'Save', onPress: () => setSubmitRequestKey((current) => current + 1) },
+    ]);
+  }, [leaveScreen]);
+
+  const requestLeave = useCallback(() => {
+    if (saving || !formDirty) {
+      leaveScreen();
+      return;
+    }
+
+    promptForUnsavedChanges();
+  }, [formDirty, leaveScreen, promptForUnsavedChanges, saving]);
+
+  useEffect(() => {
+    return setHeaderBackHandler(() => {
+      if (saving || !formDirty) {
+        return false;
+      }
+
+      promptForUnsavedChanges();
+      return true;
+    });
+  }, [formDirty, promptForUnsavedChanges, saving]);
 
   async function handleSubmit(values: HabitFormValues) {
     try {
@@ -59,9 +94,11 @@ export default function NewHabitScreen() {
 
       <HabitForm
         error={errorMessage}
-        onCancel={() => safeBack('/')}
+        onCancel={requestLeave}
+        onDirtyChange={setFormDirty}
         onSubmit={handleSubmit}
         saving={saving}
+        submitRequestKey={submitRequestKey}
         submitTitle="Save Habit"
       />
     </Screen>
