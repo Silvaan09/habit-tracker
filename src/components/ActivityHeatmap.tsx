@@ -34,7 +34,7 @@ type HeatmapWeek = {
   cells: HeatmapCell[];
 };
 
-const WEEKDAY_LABELS = ['', 'M', '', 'W', '', 'F', ''];
+const WEEKDAY_LABELS = ['M', '', 'W', '', 'F', '', 'S'];
 const CELL_SIZE = 11;
 const CELL_GAP = 3;
 const WEEKDAY_WIDTH = 18;

@@ -28,6 +28,7 @@ import {
   View,
   type ViewStyle,
 } from 'react-native';
+import Svg, { Circle } from 'react-native-svg';
 
 import { EmptyState } from '@/src/components/EmptyState';
 import { BottomSheetModal } from '@/src/components/BottomSheetModal';
@@ -1600,15 +1601,10 @@ function TodayHabitCard({
   onPress,
 }: TodayHabitCardProps) {
   const accentColor = habit.color ?? colors.habitGreen;
-  const isProgressHabit = habit.trackingType === 'subtasks' || habit.trackingType === 'numeric';
-  const tall = variant === 'tall';
-  const wide = variant === 'wide';
-  const large = variant === 'large';
-  const roomy = tall || wide || large;
-  const showProgressBlock = Boolean(progress) && variant !== 'small';
   const statusLabel = completed ? 'Completed' : skipped ? 'Skipped' : 'Remaining';
   const progressPercent = Math.max(0, Math.min(progress?.percent ?? (completed ? 1 : 0), 1));
-  const visibleHistoryItems = roomy ? historyItems : historyItems.slice(-5);
+  const visibleHistoryItems = variant === 'small' ? historyItems.slice(-5) : historyItems;
+  const isProgressHabit = habit.trackingType === 'subtasks' || habit.trackingType === 'numeric';
 
   function handleToggle(event: GestureResponderEvent) {
     event.stopPropagation();
@@ -1628,6 +1624,361 @@ function TodayHabitCard({
   function handleEditProgress(event: GestureResponderEvent) {
     event.stopPropagation();
     onEditProgress(habit.id);
+  }
+
+  function renderIcon(size = 46) {
+    return (
+      <View style={styles.habitIconWrap}>
+        <HabitIcon
+          color={accentColor}
+          fallbackIcon={habit.icon}
+          iconLibrary={habit.iconLibrary}
+          iconType={habit.iconType}
+          iconValue={habit.iconValue}
+          size={size}
+        />
+        <View style={styles.crownOverlay}>
+          <HabitCrownBadge compact milestone={crownMilestone} />
+        </View>
+      </View>
+    );
+  }
+
+  function renderTitleBlock(options: { centered?: boolean; lines?: number } = {}) {
+    return (
+      <View style={[styles.habitCardText, options.centered && styles.centeredHabitCardText]}>
+        <Text numberOfLines={options.lines ?? 1} style={styles.habitCardName}>
+          {habit.name}
+        </Text>
+        <View style={styles.streakLine}>
+          <View style={styles.streakDot} />
+          <Text numberOfLines={1} style={styles.habitCardHint}>
+            {getStreakLineText(crownMilestone.streakDays)}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  function renderCheckControl(extraStyle?: ViewStyle) {
+    return (
+      <Pressable
+        accessibilityLabel={`${completed ? 'Uncheck' : 'Check'} ${
+          habit.name
+        } for ${completionDateLabel}`}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: completed }}
+        disabled={disabled || toggleDisabled}
+        hitSlop={8}
+        onPress={handleToggle}
+        style={[
+          styles.cardCheck,
+          extraStyle,
+          completed && styles.completedCardCheck,
+          (disabled || toggleDisabled) && styles.controlDisabled,
+        ]}>
+        {completed ? <Ionicons name="checkmark" size={18} color={colors.background} /> : null}
+      </Pressable>
+    );
+  }
+
+  function renderProgressControl(size: 'compact' | 'large' = 'compact') {
+    return (
+      <ProgressRingButton
+        accessibilityLabel={`Update progress for ${habit.name}`}
+        color={skipped ? colors.warning : accentColor}
+        disabled={disabled || progressDisabled}
+        onPress={handleEditProgress}
+        percent={progressPercent}
+        size={size}
+      />
+    );
+  }
+
+  function renderHistory(style?: ViewStyle, count = getHistoryMarkerCount(variant)) {
+    return (
+      <View style={style}>
+        <HabitHistoryMiniRow accentColor={accentColor} items={visibleHistoryItems.slice(-count)} />
+      </View>
+    );
+  }
+
+  function renderSkipAction() {
+    const isUndo = skipped && !completed;
+    const actionDisabled = disabled || skipDisabled || completed;
+
+    return (
+      <Pressable
+        accessibilityLabel={
+          isUndo
+            ? `Undo skip for ${habit.name}`
+            : completed
+              ? `Skip unavailable for completed ${habit.name}`
+              : `Skip ${habit.name}`
+        }
+        accessibilityRole="button"
+        disabled={actionDisabled}
+        onPress={isUndo ? handleUndoSkip : handleSkip}
+        style={[styles.cardActionButton, actionDisabled && styles.controlDisabled]}>
+        <Text style={styles.cardActionText}>{isUndo ? 'Undo' : 'Skip'}</Text>
+      </Pressable>
+    );
+  }
+
+  function renderSkipReason(lines = 1) {
+    if (!skipped || !skipReason) {
+      return null;
+    }
+
+    return (
+      <Text numberOfLines={lines} style={styles.skipReasonText}>
+        {skipReason}
+      </Text>
+    );
+  }
+
+  function renderCheckboxSmallCard() {
+    return (
+      <>
+        <View style={styles.cardTopRow}>
+          {renderIcon(44)}
+          {renderCheckControl()}
+        </View>
+        {renderTitleBlock()}
+        <View style={styles.cardSpacer} />
+        {renderHistory(styles.cardHistory)}
+        {renderSkipReason()}
+      </>
+    );
+  }
+
+  function renderNumericSmallCard() {
+    return renderProgressSmallCard();
+  }
+
+  function renderSubtaskSmallCard() {
+    return renderProgressSmallCard();
+  }
+
+  function renderProgressSmallCard() {
+    return (
+      <>
+        <View style={styles.cardTopRow}>
+          {renderIcon(44)}
+          {renderProgressControl('compact')}
+        </View>
+        {renderTitleBlock()}
+        {progress ? (
+          <Text numberOfLines={1} style={styles.compactProgressText}>
+            {progress.label}
+          </Text>
+        ) : null}
+        <View style={styles.cardSpacer} />
+        {renderHistory(styles.cardHistory)}
+        {renderSkipReason()}
+      </>
+    );
+  }
+
+  function renderCheckboxTallCard() {
+    return (
+      <>
+        <View style={styles.cardTopRow}>
+          {renderIcon(46)}
+          {renderCheckControl()}
+        </View>
+        {renderTitleBlock({ lines: 2 })}
+        <View style={styles.tallCardCenter}>
+          <View style={[styles.checkboxFocusMark, completed && styles.completedCheckboxFocusMark]}>
+            {completed ? (
+              <Ionicons name="checkmark" size={30} color={colors.background} />
+            ) : (
+              <Ionicons name="ellipse-outline" size={34} color={colors.textSubtle} />
+            )}
+          </View>
+        </View>
+        {renderHistory(styles.cardHistory)}
+        {renderSkipReason(2)}
+      </>
+    );
+  }
+
+  function renderNumericTallCard() {
+    return renderProgressTallCard();
+  }
+
+  function renderSubtaskTallCard() {
+    return renderProgressTallCard();
+  }
+
+  function renderProgressTallCard() {
+    return (
+      <>
+        <View style={styles.cardTopRow}>
+          {renderIcon(46)}
+        </View>
+        {renderTitleBlock({ lines: 2 })}
+        <View style={styles.tallCardCenter}>{renderProgressControl('large')}</View>
+        {progress ? (
+          <Text numberOfLines={1} style={styles.centeredProgressLabel}>
+            {progress.label}
+          </Text>
+        ) : null}
+        {renderHistory(styles.cardHistory)}
+        {renderSkipReason(2)}
+      </>
+    );
+  }
+
+  function renderCheckboxWideCard() {
+    return (
+      <>
+        <View style={styles.wideCardRow}>
+          <View style={styles.wideCardCopy}>
+            {renderIcon(44)}
+            {renderTitleBlock({ lines: 1 })}
+          </View>
+          <View style={styles.wideCardControl}>{renderCheckControl(styles.largeCheckControl)}</View>
+        </View>
+        {renderHistory(styles.wideHistory)}
+        {renderSkipReason()}
+      </>
+    );
+  }
+
+  function renderNumericWideCard() {
+    return renderProgressWideCard();
+  }
+
+  function renderSubtaskWideCard() {
+    return renderProgressWideCard();
+  }
+
+  function renderProgressWideCard() {
+    return (
+      <>
+        <View style={styles.wideCardRow}>
+          <View style={styles.wideCardCopy}>
+            {renderIcon(44)}
+            {renderTitleBlock({ lines: 1 })}
+            {progress ? (
+              <Text numberOfLines={1} style={styles.compactProgressText}>
+                {progress.label}
+              </Text>
+            ) : null}
+          </View>
+          <View style={styles.wideCardControl}>{renderProgressControl('large')}</View>
+        </View>
+        {renderHistory(styles.wideHistory)}
+        {renderSkipReason()}
+      </>
+    );
+  }
+
+  function renderCheckboxLargeCard() {
+    return (
+      <>
+        <View style={styles.cardTopRow}>
+          {renderIcon(52)}
+          {renderCheckControl()}
+        </View>
+        {renderTitleBlock({ lines: 2 })}
+        <View style={styles.largeCardCenter}>
+          <View
+            style={[
+              styles.checkboxFocusMark,
+              styles.largeCheckboxFocusMark,
+              completed && styles.completedCheckboxFocusMark,
+            ]}>
+            {completed ? (
+              <Ionicons name="checkmark" size={42} color={colors.background} />
+            ) : (
+              <Ionicons name="ellipse-outline" size={46} color={colors.textSubtle} />
+            )}
+          </View>
+        </View>
+        {renderHistory(styles.cardHistory)}
+        {renderSkipReason(2)}
+      </>
+    );
+  }
+
+  function renderNumericLargeCard() {
+    return renderProgressLargeCard();
+  }
+
+  function renderSubtaskLargeCard() {
+    return renderProgressLargeCard();
+  }
+
+  function renderProgressLargeCard() {
+    return (
+      <>
+        <View style={styles.cardTopRow}>
+          {renderIcon(52)}
+        </View>
+        {renderTitleBlock({ lines: 2 })}
+        <View style={styles.largeCardCenter}>{renderProgressControl('large')}</View>
+        {progress ? (
+          <View style={styles.largeProgressBlock}>
+            <Text numberOfLines={1} style={styles.centeredProgressLabel}>
+              {progress.label}
+            </Text>
+            <AnimatedProgressBar color={accentColor} height={8} percent={progressPercent} />
+          </View>
+        ) : null}
+        {renderHistory(styles.cardHistory)}
+        {renderSkipReason(2)}
+      </>
+    );
+  }
+
+  function renderCardLayout() {
+    if (habit.trackingType === 'checkbox' || !isProgressHabit) {
+      if (variant === 'tall') {
+        return renderCheckboxTallCard();
+      }
+
+      if (variant === 'wide') {
+        return renderCheckboxWideCard();
+      }
+
+      if (variant === 'large') {
+        return renderCheckboxLargeCard();
+      }
+
+      return renderCheckboxSmallCard();
+    }
+
+    if (habit.trackingType === 'numeric') {
+      if (variant === 'tall') {
+        return renderNumericTallCard();
+      }
+
+      if (variant === 'wide') {
+        return renderNumericWideCard();
+      }
+
+      if (variant === 'large') {
+        return renderNumericLargeCard();
+      }
+
+      return renderNumericSmallCard();
+    }
+
+    if (variant === 'tall') {
+      return renderSubtaskTallCard();
+    }
+
+    if (variant === 'wide') {
+      return renderSubtaskWideCard();
+    }
+
+    if (variant === 'large') {
+      return renderSubtaskLargeCard();
+    }
+
+    return renderSubtaskSmallCard();
   }
 
   return (
@@ -1656,126 +2007,92 @@ function TodayHabitCard({
         </View>
       ) : null}
 
-      <View style={styles.habitCardTop}>
-        <View style={styles.habitIconWrap}>
-          <HabitIcon
-            color={accentColor}
-            fallbackIcon={habit.icon}
-            iconLibrary={habit.iconLibrary}
-            iconType={habit.iconType}
-            iconValue={habit.iconValue}
-            size={48}
-          />
-          <View style={styles.crownOverlay}>
-            <HabitCrownBadge compact milestone={crownMilestone} />
-          </View>
-        </View>
-
-        {isProgressHabit ? (
-          <Pressable
-            accessibilityLabel={`Update progress for ${habit.name}`}
-            accessibilityRole="button"
-            disabled={disabled || progressDisabled}
-            onPress={handleEditProgress}
-            style={[
-              styles.progressCircle,
-              { borderColor: skipped ? colors.warning : completed ? colors.primary : accentColor },
-              (disabled || progressDisabled) && styles.controlDisabled,
-            ]}>
-            <Text style={styles.progressCircleText}>{Math.round(progressPercent * 100)}%</Text>
-          </Pressable>
-        ) : (
-          <Pressable
-            accessibilityLabel={`${completed ? 'Uncheck' : 'Check'} ${
-              habit.name
-            } for ${completionDateLabel}`}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: completed }}
-            disabled={disabled || toggleDisabled}
-            hitSlop={8}
-            onPress={handleToggle}
-            style={[
-              styles.cardCheck,
-              completed && styles.completedCardCheck,
-              (disabled || toggleDisabled) && styles.controlDisabled,
-            ]}>
-            {completed ? <Ionicons name="checkmark" size={18} color={colors.background} /> : null}
-          </Pressable>
-        )}
-      </View>
-
-      <View style={styles.habitCardText}>
-        <Text numberOfLines={roomy ? 2 : 1} style={styles.habitCardName}>
-          {habit.name}
-        </Text>
-        <Text numberOfLines={1} style={styles.habitCardHint}>
-          {getHabitCardHint(habit)}
-        </Text>
-      </View>
-
-      {showProgressBlock && progress ? (
-        <Pressable
-          accessibilityLabel={`Update progress for ${habit.name}`}
-          accessibilityRole="button"
-          disabled={disabled || progressDisabled}
-          onPress={handleEditProgress}
-          style={[styles.cardProgressBlock, (disabled || progressDisabled) && styles.controlDisabled]}>
-          <Text numberOfLines={1} style={styles.cardProgressLabel}>
-            {progress.label}
-          </Text>
-          <AnimatedProgressBar color={accentColor} height={8} percent={progressPercent} />
-        </Pressable>
-      ) : null}
-
-      <HabitHistoryMiniRow items={visibleHistoryItems} />
-
-      <View style={styles.habitCardFooter}>
-        <View
-          style={[
-            styles.statusPill,
-            completed && styles.completedStatusPill,
-            skipped && styles.skippedStatusPill,
-          ]}>
-          <Text
-            style={[
-              styles.statusPillText,
-              completed && styles.completedStatusText,
-              skipped && styles.skippedStatusText,
-            ]}>
-            {statusLabel}
-          </Text>
-        </View>
-
-        {!completed ? (
-          skipped ? (
-            <Pressable
-              accessibilityLabel={`Undo skip for ${habit.name}`}
-              accessibilityRole="button"
-              disabled={disabled || skipDisabled}
-              onPress={handleUndoSkip}
-              style={[styles.cardActionButton, (disabled || skipDisabled) && styles.controlDisabled]}>
-              <Text style={styles.cardActionText}>Undo</Text>
-            </Pressable>
-          ) : (
-            <Pressable
-              accessibilityLabel={`Skip ${habit.name}`}
-              accessibilityRole="button"
-              disabled={disabled || skipDisabled}
-              onPress={handleSkip}
-              style={[styles.cardActionButton, (disabled || skipDisabled) && styles.controlDisabled]}>
-              <Text style={styles.cardActionText}>Skip</Text>
-            </Pressable>
-          )
-        ) : null}
-      </View>
-
-      {skipped && skipReason ? (
-        <Text numberOfLines={roomy ? 2 : 1} style={styles.skipReasonText}>
-          {skipReason}
-        </Text>
-      ) : null}
+      {renderCardLayout()}
+      {renderSkipAction()}
     </Pressable>
   );
+}
+
+function ProgressRingButton({
+  accessibilityLabel,
+  color,
+  disabled,
+  onPress,
+  percent,
+  size,
+}: {
+  accessibilityLabel: string;
+  color: string;
+  disabled: boolean;
+  onPress: (event: GestureResponderEvent) => void;
+  percent: number;
+  size: 'compact' | 'large';
+}) {
+  const diameter = size === 'large' ? 96 : 42;
+  const strokeWidth = size === 'large' ? 7 : 4;
+  const radiusValue = (diameter - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radiusValue;
+  const clampedPercent = Math.max(0, Math.min(percent, 1));
+  const dashOffset = circumference * (1 - clampedPercent);
+  const complete = clampedPercent >= 1;
+
+  return (
+    <Pressable
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={[
+        styles.progressRingButton,
+        size === 'large' ? styles.largeProgressRingButton : styles.compactProgressRingButton,
+        disabled && styles.controlDisabled,
+      ]}>
+      <Svg height={diameter} style={styles.progressRingSvg} width={diameter}>
+        <Circle
+          cx={diameter / 2}
+          cy={diameter / 2}
+          fill="transparent"
+          r={radiusValue}
+          stroke={colors.surfaceMuted}
+          strokeWidth={strokeWidth}
+        />
+        <Circle
+          cx={diameter / 2}
+          cy={diameter / 2}
+          fill="transparent"
+          r={radiusValue}
+          stroke={color}
+          strokeDasharray={`${circumference} ${circumference}`}
+          strokeDashoffset={dashOffset}
+          strokeLinecap="round"
+          strokeWidth={strokeWidth}
+          transform={`rotate(-90 ${diameter / 2} ${diameter / 2})`}
+        />
+      </Svg>
+      {complete ? (
+        <Ionicons name="checkmark" size={size === 'large' ? 32 : 18} color={colors.text} />
+      ) : (
+        <Text
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          style={size === 'large' ? styles.largeProgressCircleText : styles.progressCircleText}>
+          {Math.round(clampedPercent * 100)}%
+        </Text>
+      )}
+    </Pressable>
+  );
+}
+
+function getStreakLineText(streakDays: number) {
+  if (streakDays <= 0) {
+    return 'No streak yet';
+  }
+
+  return `${streakDays} day streak`;
+}
+
+function getHistoryMarkerCount(variant: HabitCardVariant) {
+  return variant === 'wide' || variant === 'large' ? 7 : 5;
 }
 
 async function getProgressByHabitId(habits: Habit[], date: string) {
@@ -2144,26 +2461,6 @@ function getBuildDayHelperLine(
   }
 
   return 'Start with one small step.';
-}
-
-function getHabitCardHint(habit: Habit) {
-  if (habit.trackingType === 'subtasks') {
-    return 'Checklist habit';
-  }
-
-  if (habit.trackingType === 'numeric') {
-    return habit.targetUnit ? `Goal in ${habit.targetUnit}` : 'Numeric goal';
-  }
-
-  if (habit.scheduleType === 'weekdays') {
-    return 'Specific days';
-  }
-
-  if (habit.scheduleType === 'cycle' || habit.scheduleType === 'interval') {
-    return `${habit.scheduleOnDays ?? 1} on / ${habit.scheduleOffDays ?? 0} off`;
-  }
-
-  return 'Daily habit';
 }
 
 const styles = StyleSheet.create({
@@ -2590,6 +2887,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     overflow: 'hidden',
     padding: spacing.md,
+    paddingBottom: 44,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.lg,
@@ -2617,7 +2915,7 @@ const styles = StyleSheet.create({
   },
   layoutSizeBadge: {
     position: 'absolute',
-    right: spacing.sm,
+    left: spacing.sm,
     bottom: spacing.sm,
     zIndex: 2,
     paddingHorizontal: spacing.sm,
@@ -2630,14 +2928,24 @@ const styles = StyleSheet.create({
     ...typography.small,
     fontWeight: '900',
   },
-  habitCardTop: {
+  cardTopRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: spacing.md,
+    gap: spacing.sm,
+  },
+  cardSpacer: {
+    flex: 1,
+  },
+  cardHistory: {
+    position: 'absolute',
+    left: spacing.md,
+    bottom: spacing.md,
+    maxWidth: '68%',
   },
   habitIconWrap: {
     position: 'relative',
+    alignSelf: 'flex-start',
   },
   crownOverlay: {
     position: 'absolute',
@@ -2645,8 +2953,8 @@ const styles = StyleSheet.create({
     bottom: -8,
   },
   cardCheck: {
-    width: 38,
-    height: 38,
+    width: 34,
+    height: 34,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
@@ -2661,22 +2969,69 @@ const styles = StyleSheet.create({
   controlDisabled: {
     opacity: 0.42,
   },
-  progressCircle: {
-    width: 46,
-    height: 46,
+  progressRingButton: {
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 3,
-    borderRadius: radius.pill,
     backgroundColor: colors.surfaceElevated,
   },
+  compactProgressRingButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+  },
   progressCircleText: {
+    position: 'absolute',
     color: colors.text,
-    ...typography.caption,
+    fontSize: 10,
+    lineHeight: 13,
     fontWeight: '900',
+  },
+  progressRingSvg: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+  },
+  largeProgressRingButton: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+  },
+  largeProgressCircleText: {
+    position: 'absolute',
+    color: colors.text,
+    fontSize: 23,
+    lineHeight: 27,
+    fontWeight: '900',
+  },
+  largeCheckControl: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+  },
+  checkboxFocusMark: {
+    width: 76,
+    height: 76,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.surfaceMuted,
+    borderRadius: 38,
+    backgroundColor: colors.surfaceElevated,
+  },
+  largeCheckboxFocusMark: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+  },
+  completedCheckboxFocusMark: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
   },
   habitCardText: {
     gap: spacing.xs,
+  },
+  centeredHabitCardText: {
+    alignItems: 'center',
   },
   habitCardName: {
     color: colors.text,
@@ -2688,58 +3043,73 @@ const styles = StyleSheet.create({
     ...typography.small,
     fontWeight: '700',
   },
-  cardProgressBlock: {
-    gap: spacing.xs,
+  streakLine: {
+    minHeight: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
-  cardProgressLabel: {
+  streakDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: colors.warning,
+  },
+  compactProgressText: {
     color: colors.textMuted,
     ...typography.small,
     fontWeight: '800',
   },
-  cardProgressTrack: {
-    height: 8,
-    overflow: 'hidden',
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
+  tallCardCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 92,
   },
-  cardProgressFill: {
-    height: '100%',
-    borderRadius: radius.pill,
+  centeredProgressLabel: {
+    color: colors.textMuted,
+    ...typography.caption,
+    fontWeight: '900',
+    textAlign: 'center',
   },
-  habitCardFooter: {
-    marginTop: 'auto',
+  wideCardRow: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.md,
+    paddingBottom: 12,
+  },
+  wideCardCopy: {
+    flex: 1,
+    alignSelf: 'stretch',
+    gap: spacing.xs,
     justifyContent: 'space-between',
+  },
+  wideCardControl: {
+    width: 108,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  wideHistory: {
+    position: 'absolute',
+    left: spacing.md,
+    bottom: spacing.md,
+    maxWidth: 150,
+  },
+  largeCardCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: spacing.sm,
   },
-  statusPill: {
-    minHeight: 26,
-    justifyContent: 'center',
-    paddingHorizontal: spacing.sm,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceElevated,
-  },
-  completedStatusPill: {
-    backgroundColor: colors.primary,
-  },
-  skippedStatusPill: {
-    backgroundColor: colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: colors.warning,
-  },
-  statusPillText: {
-    color: colors.textMuted,
-    ...typography.small,
-    fontWeight: '900',
-  },
-  completedStatusText: {
-    color: colors.background,
-  },
-  skippedStatusText: {
-    color: colors.warning,
+  largeProgressBlock: {
+    gap: spacing.sm,
   },
   cardActionButton: {
+    position: 'absolute',
+    right: spacing.sm,
+    bottom: spacing.sm,
+    zIndex: 3,
     minHeight: 28,
     justifyContent: 'center',
     paddingHorizontal: spacing.sm,
@@ -2754,6 +3124,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   skipReasonText: {
+    maxWidth: '68%',
     color: colors.warning,
     ...typography.small,
     fontWeight: '800',

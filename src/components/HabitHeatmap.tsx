@@ -27,13 +27,14 @@ type HeatmapWeek = {
   cells: HeatmapCell[];
 };
 
-const WEEKDAY_LABELS = ['', 'M', '', 'W', '', 'F', ''];
+const WEEKDAY_LABELS = ['M', '', 'W', '', 'F', '', 'S'];
+const COMPLETED_COLOR = colors.warning;
+const SKIPPED_COLOR = '#FFB84D';
 
 export function HabitHeatmap({
   completionDates,
   skippedDates = [],
   today,
-  color = colors.primary,
   days = 90,
   title = 'Completion heatmap',
   subtitle,
@@ -119,10 +120,7 @@ export function HabitHeatmap({
                       style={[
                         styles.cell,
                         !cell.inRange && styles.outsideCell,
-                        cell.completed && {
-                          borderColor: color ?? colors.primary,
-                          backgroundColor: color ?? colors.primary,
-                        },
+                        cell.completed && styles.completedCell,
                         cell.skipped && !cell.completed && styles.skippedCell,
                       ]}
                     />
@@ -134,12 +132,12 @@ export function HabitHeatmap({
         </View>
 
         <View style={styles.legend}>
-          <Text style={styles.legendText}>Missed</Text>
           <View style={styles.legendCell} />
+          <Text style={styles.legendText}>Missed</Text>
+          <View style={[styles.legendCell, styles.legendCompletedCell]} />
+          <Text style={styles.legendText}>Completed</Text>
           <View style={[styles.legendCell, styles.legendSkippedCell]} />
           <Text style={styles.legendText}>Skipped</Text>
-          <View style={[styles.legendCell, { backgroundColor: color ?? colors.primary }]} />
-          <Text style={styles.legendText}>Completed</Text>
         </View>
 
         {completionDates.length === 0 && skippedDates.length === 0 ? (
@@ -320,9 +318,13 @@ const styles = StyleSheet.create({
   outsideCell: {
     opacity: 0,
   },
+  completedCell: {
+    borderColor: COMPLETED_COLOR,
+    backgroundColor: COMPLETED_COLOR,
+  },
   skippedCell: {
-    borderColor: colors.warning,
-    backgroundColor: colors.warning,
+    borderColor: SKIPPED_COLOR,
+    backgroundColor: SKIPPED_COLOR,
   },
   legend: {
     flexDirection: 'row',
@@ -343,9 +345,13 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: colors.surfaceMuted,
   },
+  legendCompletedCell: {
+    borderColor: COMPLETED_COLOR,
+    backgroundColor: COMPLETED_COLOR,
+  },
   legendSkippedCell: {
-    borderColor: colors.warning,
-    backgroundColor: colors.warning,
+    borderColor: SKIPPED_COLOR,
+    backgroundColor: SKIPPED_COLOR,
   },
   emptyNote: {
     gap: spacing.xs,

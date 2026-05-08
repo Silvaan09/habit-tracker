@@ -1,19 +1,14 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
-import { colors, radius, typography } from '@/src/theme';
+import { colors } from '@/src/theme';
 import type { HabitHistoryItem, HabitHistoryStatus } from '@/src/utils/recentHabitHistory';
 
 type HabitHistoryMiniRowProps = {
   items: HabitHistoryItem[];
+  accentColor?: string;
 };
 
-const STATUS_COLORS: Record<HabitHistoryStatus, string> = {
-  completed: colors.primary,
-  skipped: colors.warning,
-  missed: colors.surfaceMuted,
-};
-
-export function HabitHistoryMiniRow({ items }: HabitHistoryMiniRowProps) {
+export function HabitHistoryMiniRow({ accentColor = colors.primary, items }: HabitHistoryMiniRowProps) {
   if (items.length === 0) {
     return null;
   }
@@ -30,22 +25,33 @@ export function HabitHistoryMiniRow({ items }: HabitHistoryMiniRowProps) {
             style={[
               styles.cell,
               {
-                backgroundColor: STATUS_COLORS[item.status],
+                backgroundColor: getStatusColor(item.status, accentColor),
                 borderColor:
-                  item.status === 'missed' ? colors.border : STATUS_COLORS[item.status],
+                  item.status === 'missed' ? colors.border : getStatusColor(item.status, accentColor),
               },
             ]}
           />
         ))}
       </View>
-      <Text style={styles.label}>Recent</Text>
     </View>
   );
 }
 
+function getStatusColor(status: HabitHistoryStatus, accentColor: string) {
+  if (status === 'completed') {
+    return accentColor;
+  }
+
+  if (status === 'skipped') {
+    return colors.warning;
+  }
+
+  return colors.surfaceMuted;
+}
+
 const styles = StyleSheet.create({
   container: {
-    gap: 3,
+    flexDirection: 'row',
   },
   cells: {
     flexDirection: 'row',
@@ -55,12 +61,6 @@ const styles = StyleSheet.create({
     width: 11,
     height: 11,
     borderWidth: 1,
-    borderRadius: radius.sm,
-  },
-  label: {
-    color: colors.textSubtle,
-    ...typography.small,
-    fontWeight: '800',
-    textTransform: 'uppercase',
+    borderRadius: 3,
   },
 });
