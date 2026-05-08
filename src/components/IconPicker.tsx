@@ -54,7 +54,6 @@ export function IconPicker({
       iconValue: option.key,
       iconLibrary: 'lucide',
     });
-    onClose();
   }
 
   return (
@@ -82,7 +81,10 @@ export function IconPicker({
         value={search}
       />
 
-      <ScrollView contentContainerStyle={styles.iconSections} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={styles.iconSections}
+        keyboardShouldPersistTaps="handled"
+        style={styles.iconScroll}>
         {normalizedSearch ? (
           <IconGrid
             accentColor={accentColor}
@@ -186,6 +188,7 @@ function PickerTile({
 
 const styles = StyleSheet.create({
   sheet: {
+    height: '82%',
     maxHeight: '88%',
     gap: spacing.lg,
     padding: spacing.xl,
@@ -224,18 +227,25 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   searchInput: {
-    minHeight: 52,
+    height: 52,
     paddingHorizontal: spacing.lg,
+    paddingVertical: 0,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.lg,
     backgroundColor: colors.surface,
     color: colors.text,
     ...typography.body,
+    fontSize: 16,
+    lineHeight: 20,
   },
   iconSections: {
+    minHeight: 360,
     gap: spacing.xl,
     paddingBottom: spacing.xl,
+  },
+  iconScroll: {
+    minHeight: 360,
   },
   categorySection: {
     gap: spacing.md,

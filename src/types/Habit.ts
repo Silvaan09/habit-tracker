@@ -1,5 +1,5 @@
 export type HabitIconType = 'emoji' | 'icon';
-export type HabitScheduleType = 'daily' | 'weekdays' | 'interval';
+export type HabitScheduleType = 'daily' | 'weekdays' | 'cycle' | 'interval';
 export type HabitTrackingType = 'checkbox' | 'subtasks' | 'numeric';
 export type HabitCardLayoutSize = 'auto' | 'small' | 'tall' | 'wide' | 'large';
 
@@ -18,6 +18,8 @@ export type Habit = {
   scheduleType: HabitScheduleType;
   scheduleWeekdays: number[] | null;
   scheduleIntervalDays: number | null;
+  scheduleOnDays: number | null;
+  scheduleOffDays: number | null;
   scheduleStartDate: string | null;
   trackingType: HabitTrackingType;
   targetValue: number | null;

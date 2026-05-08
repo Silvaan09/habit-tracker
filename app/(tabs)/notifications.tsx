@@ -217,17 +217,14 @@ function getReminderScheduleSummary(habit: Habit) {
     const weekdays = habit.scheduleWeekdays ?? [];
 
     if (weekdays.length === 0) {
-      return `No active weekdays - ${time}`;
+      return `No specific days - ${time}`;
     }
 
     return `${weekdays.map(getWeekdayLabel).join(', ')} - ${time}`;
   }
 
-  if (habit.scheduleType === 'interval') {
-    const intervalDays = habit.scheduleIntervalDays ?? 1;
-    const dayLabel = intervalDays === 1 ? 'day' : 'days';
-
-    return `Every ${intervalDays} ${dayLabel} - ${time}`;
+  if (habit.scheduleType === 'cycle' || habit.scheduleType === 'interval') {
+    return `${habit.scheduleOnDays ?? 1} days on, ${habit.scheduleOffDays ?? 0} days off - ${time}`;
   }
 
   return `Daily - ${time}`;

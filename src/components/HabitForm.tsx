@@ -9,10 +9,11 @@ import {
 import { DEFAULT_LUCIDE_HABIT_ICON, LucideCheck } from '@/src/components/lucideHabitIcons';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { ReminderTimePicker } from '@/src/components/ReminderTimePicker';
+import { ScheduleDatePickerModal } from '@/src/components/ScheduleDatePickerModal';
 import { TextInputField } from '@/src/components/TextInputField';
 import { colors, radius, spacing, typography } from '@/src/theme';
 import type { HabitIconType, HabitScheduleType, HabitTrackingType } from '@/src/types/Habit';
-import { getTodayDateString } from '@/src/utils/dates';
+import { formatDisplayDateDDMMYYYY, getTodayDateString } from '@/src/utils/dates';
 import {
   isValidReminderTime,
   REMINDER_TIME_VALIDATION_MESSAGE,
@@ -31,6 +32,8 @@ export type HabitFormValues = {
   scheduleType: HabitScheduleType;
   scheduleWeekdays: number[] | null;
   scheduleIntervalDays: number | null;
+  scheduleOnDays: number | null;
+  scheduleOffDays: number | null;
   scheduleStartDate: string | null;
   trackingType: HabitTrackingType;
   targetValue: number | null;
@@ -73,6 +76,7 @@ const WEEKDAY_OPTIONS = [
   { label: 'Sun', value: 7 },
 ];
 const DEFAULT_HABIT_ICON = DEFAULT_LUCIDE_HABIT_ICON;
+const SCHEDULE_OPTIONS: HabitScheduleType[] = ['daily', 'weekdays', 'cycle'];
 
 export function HabitForm({
   initialValues,
@@ -99,18 +103,26 @@ export function HabitForm({
   const [reminderTime, setReminderTime] = useState(
     initialValues?.reminderEnabled && !initialReminderTime ? '08:00' : initialReminderTime
   );
-  const [scheduleType, setScheduleType] = useState<HabitScheduleType>(
-    initialValues?.scheduleType ?? 'daily'
-  );
+  const initialScheduleType = normalizeFormScheduleType(initialValues?.scheduleType);
+  const [scheduleType, setScheduleType] = useState<HabitScheduleType>(initialScheduleType);
   const [scheduleWeekdays, setScheduleWeekdays] = useState<number[]>(
     initialValues?.scheduleWeekdays ?? [1, 2, 3, 4, 5]
   );
-  const [scheduleIntervalDays, setScheduleIntervalDays] = useState(
-    String(initialValues?.scheduleIntervalDays ?? 3)
+  const [scheduleOnDays, setScheduleOnDays] = useState(
+    String(initialValues?.scheduleOnDays ?? (initialValues?.scheduleIntervalDays ? 1 : 3))
+  );
+  const [scheduleOffDays, setScheduleOffDays] = useState(
+    String(
+      initialValues?.scheduleOffDays ??
+        (initialValues?.scheduleIntervalDays
+          ? Math.max(initialValues.scheduleIntervalDays - 1, 0)
+          : 1)
+    )
   );
   const [scheduleStartDate, setScheduleStartDate] = useState(
     initialValues?.scheduleStartDate ?? getTodayDateString()
   );
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
   const [trackingType, setTrackingType] = useState<HabitTrackingType>(
     initialValues?.trackingType ?? 'checkbox'
   );
@@ -143,20 +155,26 @@ export function HabitForm({
       return;
     }
 
-    const parsedIntervalDays = Number(scheduleIntervalDays);
+    const parsedOnDays = Number(scheduleOnDays);
+    const parsedOffDays = Number(scheduleOffDays);
 
     if (scheduleType === 'weekdays' && scheduleWeekdays.length === 0) {
-      setScheduleValidationMessage('Choose at least one weekday.');
+      setScheduleValidationMessage('Choose at least one specific day.');
       return;
     }
 
-    if (scheduleType === 'interval' && (!Number.isInteger(parsedIntervalDays) || parsedIntervalDays < 1)) {
-      setScheduleValidationMessage('Interval must be a positive whole number.');
+    if (scheduleType === 'cycle' && (!Number.isInteger(parsedOnDays) || parsedOnDays < 1)) {
+      setScheduleValidationMessage('Days on must be a positive whole number.');
+      return;
+    }
+
+    if (scheduleType === 'cycle' && (!Number.isInteger(parsedOffDays) || parsedOffDays < 0)) {
+      setScheduleValidationMessage('Days off must be 0 or more.');
       return;
     }
 
     if (!isDateString(scheduleStartDate)) {
-      setScheduleValidationMessage('Use a start date like 2026-05-05.');
+      setScheduleValidationMessage('Choose a valid start date.');
       return;
     }
 
@@ -189,7 +207,9 @@ export function HabitForm({
       reminderTime: reminderEnabled ? trimmedReminderTime : null,
       scheduleType,
       scheduleWeekdays: scheduleType === 'weekdays' ? scheduleWeekdays : null,
-      scheduleIntervalDays: scheduleType === 'interval' ? parsedIntervalDays : null,
+      scheduleIntervalDays: null,
+      scheduleOnDays: scheduleType === 'cycle' ? parsedOnDays : null,
+      scheduleOffDays: scheduleType === 'cycle' ? parsedOffDays : null,
       scheduleStartDate,
       trackingType,
       targetValue: trackingType === 'numeric' ? parsedTargetValue : null,
@@ -259,7 +279,8 @@ export function HabitForm({
   const schedulePreview = getSchedulePreview(
     scheduleType,
     scheduleWeekdays,
-    scheduleIntervalDays,
+    scheduleOnDays,
+    scheduleOffDays,
     scheduleStartDate
   );
   const trackingPreview = getTrackingPreview(trackingType, subtaskTitles, targetValue, targetUnit);
@@ -499,7 +520,7 @@ export function HabitForm({
         </View>
 
         <View style={styles.scheduleTypeGrid}>
-          {(['daily', 'weekdays', 'interval'] as const).map((type) => (
+          {SCHEDULE_OPTIONS.map((type) => (
             <Pressable
               accessibilityLabel={`Set schedule to ${getScheduleTypeLabel(type)}`}
               accessibilityRole="button"
@@ -536,7 +557,7 @@ export function HabitForm({
 
         {scheduleType === 'weekdays' ? (
           <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Weekdays</Text>
+            <Text style={styles.label}>Specific days</Text>
             <View style={styles.weekdayChips}>
               {WEEKDAY_OPTIONS.map((weekday) => {
                 const selected = scheduleWeekdays.includes(weekday.value);
@@ -576,31 +597,48 @@ export function HabitForm({
         ) : null}
 
         <View style={styles.fieldGroup}>
-          <TextInputField
-            editable={!saving}
-            helper="The habit will not appear before this date."
-            label="Start date"
-            onChangeText={(value) => {
-              setScheduleStartDate(value);
-              setScheduleValidationMessage(null);
-            }}
-            placeholder="2026-05-05"
-            value={scheduleStartDate}
-          />
+          <Text style={styles.label}>Start date</Text>
+          <Text style={styles.helperText}>The habit will not appear before this date.</Text>
+          <Pressable
+            accessibilityLabel="Choose schedule start date"
+            accessibilityRole="button"
+            disabled={saving}
+            onPress={() => setDatePickerVisible(true)}
+            style={({ pressed }) => [
+              styles.datePickerButton,
+              pressed && styles.pressed,
+              saving && styles.disabled,
+            ]}>
+            <Text style={styles.datePickerValue}>
+              {formatDisplayDateDDMMYYYY(scheduleStartDate)}
+            </Text>
+            <Text style={styles.datePickerAction}>Change</Text>
+          </Pressable>
         </View>
 
-        {scheduleType === 'interval' ? (
+        {scheduleType === 'cycle' ? (
           <View style={styles.intervalFields}>
             <TextInputField
               editable={!saving}
               keyboardType="number-pad"
-              label="Every X days"
+              label="Days on"
               onChangeText={(value) => {
-                setScheduleIntervalDays(value.replace(/[^0-9]/g, ''));
+                setScheduleOnDays(value.replace(/[^0-9]/g, ''));
                 setScheduleValidationMessage(null);
               }}
               placeholder="3"
-              value={scheduleIntervalDays}
+              value={scheduleOnDays}
+            />
+            <TextInputField
+              editable={!saving}
+              keyboardType="number-pad"
+              label="Days off"
+              onChangeText={(value) => {
+                setScheduleOffDays(value.replace(/[^0-9]/g, ''));
+                setScheduleValidationMessage(null);
+              }}
+              placeholder="1"
+              value={scheduleOffDays}
             />
           </View>
         ) : null}
@@ -633,15 +671,17 @@ export function HabitForm({
               {reminderEnabled ? 'Reminder is on.' : 'Turn this on to schedule a local reminder.'}
             </Text>
           </View>
-          <Text style={styles.reminderState}>{reminderEnabled ? 'On' : 'Off'}</Text>
-          <Switch
-            disabled={saving}
-            onValueChange={handleReminderSwitch}
-            pointerEvents="none"
-            thumbColor={reminderEnabled ? colors.primary : colors.textMuted}
-            trackColor={{ false: colors.surfaceMuted, true: colors.primaryMuted }}
-            value={reminderEnabled}
-          />
+          <View style={styles.reminderControlRow}>
+            <Text style={styles.reminderState}>{reminderEnabled ? 'On' : 'Off'}</Text>
+            <Switch
+              disabled={saving}
+              onValueChange={handleReminderSwitch}
+              pointerEvents="none"
+              thumbColor={reminderEnabled ? colors.primary : colors.textMuted}
+              trackColor={{ false: colors.surfaceMuted, true: colors.primaryMuted }}
+              value={reminderEnabled}
+            />
+          </View>
         </Pressable>
 
         {reminderEnabled ? (
@@ -709,17 +749,26 @@ export function HabitForm({
         selected={selectedIcon}
         visible={pickerVisible}
       />
+      <ScheduleDatePickerModal
+        onClose={() => setDatePickerVisible(false)}
+        onSelectDate={(date) => {
+          setScheduleStartDate(date);
+          setScheduleValidationMessage(null);
+        }}
+        selectedDate={scheduleStartDate}
+        visible={datePickerVisible}
+      />
     </View>
   );
 }
 
 function getScheduleTypeLabel(scheduleType: HabitScheduleType) {
   if (scheduleType === 'weekdays') {
-    return 'Weekdays';
+    return 'Specific days';
   }
 
-  if (scheduleType === 'interval') {
-    return 'Every X days';
+  if (scheduleType === 'cycle' || scheduleType === 'interval') {
+    return 'On/off cycle';
   }
 
   return 'Daily';
@@ -727,11 +776,11 @@ function getScheduleTypeLabel(scheduleType: HabitScheduleType) {
 
 function getScheduleTypeDescription(scheduleType: HabitScheduleType) {
   if (scheduleType === 'weekdays') {
-    return 'Pick days';
+    return 'Pick exact days';
   }
 
-  if (scheduleType === 'interval') {
-    return 'Custom rhythm';
+  if (scheduleType === 'cycle' || scheduleType === 'interval') {
+    return 'Days on and off';
   }
 
   return 'Every day';
@@ -783,22 +832,29 @@ function getTrackingPreview(
 function getSchedulePreview(
   scheduleType: HabitScheduleType,
   weekdays: number[],
-  intervalDays: string,
+  onDays: string,
+  offDays: string,
   startDate: string
 ) {
+  const displayStartDate = formatDisplayDateDDMMYYYY(startDate);
+
   if (scheduleType === 'weekdays') {
     const labels = WEEKDAY_OPTIONS.filter((weekday) => weekdays.includes(weekday.value))
       .map((weekday) => weekday.label)
       .join(', ');
 
-    return `${labels || 'No weekdays selected'} from ${startDate}`;
+    return `${labels || 'No days selected'} from ${displayStartDate}`;
   }
 
-  if (scheduleType === 'interval') {
-    return `Every ${intervalDays || 'X'} day${intervalDays === '1' ? '' : 's'} from ${startDate}`;
+  if (scheduleType === 'cycle' || scheduleType === 'interval') {
+    return `${onDays || 'X'} days on · ${offDays || 'Y'} days off from ${displayStartDate}`;
   }
 
-  return `Every day from ${startDate}`;
+  return `Every day from ${displayStartDate}`;
+}
+
+function normalizeFormScheduleType(scheduleType: HabitScheduleType | undefined): HabitScheduleType {
+  return scheduleType === 'interval' ? 'cycle' : scheduleType ?? 'daily';
 }
 
 function isDateString(value: string) {
@@ -1026,6 +1082,28 @@ const styles = StyleSheet.create({
   intervalFields: {
     gap: spacing.lg,
   },
+  datePickerButton: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceElevated,
+  },
+  datePickerValue: {
+    color: colors.text,
+    ...typography.body,
+    fontWeight: '800',
+  },
+  datePickerAction: {
+    color: colors.primary,
+    ...typography.caption,
+    fontWeight: '900',
+  },
   scheduleError: {
     color: colors.destructive,
     ...typography.caption,
@@ -1045,7 +1123,14 @@ const styles = StyleSheet.create({
   },
   reminderText: {
     flex: 1,
+    justifyContent: 'center',
     gap: spacing.xs,
+  },
+  reminderControlRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
   },
   reminderState: {
     color: colors.primary,

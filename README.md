@@ -26,8 +26,8 @@ The app currently runs in **Expo Go** for development and is structured to suppo
 Habits can be scheduled in multiple ways:
 
 - **Daily habits**
-- **Specific weekdays**
-- **Every X days / interval-based habits**
+- **Specific days**
+- **On/off cycle habits** such as 3 days on, 1 day off
 - **Schedule start dates** so habits do not appear before they begin
 - **Selected-date tracking**
   - Scroll through weeks

@@ -10,11 +10,11 @@ import {
   ViewStyle,
 } from 'react-native';
 
-const SHEET_OFFSET = 72;
+const SHEET_OFFSET = 88;
 const ENTER_DURATION = 260;
-const EXIT_DURATION = 165;
-const BACKDROP_ENTER_DURATION = 170;
-const BACKDROP_EXIT_DURATION = 120;
+const EXIT_DURATION = 200;
+const BACKDROP_ENTER_DURATION = 180;
+const BACKDROP_EXIT_DURATION = 150;
 
 type BottomSheetModalProps = PropsWithChildren<{
   visible: boolean;
@@ -32,45 +32,76 @@ export function BottomSheetModal({
 }: BottomSheetModalProps) {
   const [mounted, setMounted] = useState(visible);
   const backdropOpacity = useRef(new Animated.Value(0)).current;
+  const frameRef = useRef<number | null>(null);
+  const sheetOpacity = useRef(new Animated.Value(0)).current;
   const sheetTranslateY = useRef(new Animated.Value(SHEET_OFFSET)).current;
 
   useEffect(() => {
+    if (frameRef.current !== null) {
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+
     if (visible) {
       setMounted(true);
       sheetTranslateY.stopAnimation();
       backdropOpacity.stopAnimation();
+      sheetOpacity.stopAnimation();
       sheetTranslateY.setValue(SHEET_OFFSET);
       backdropOpacity.setValue(0);
+      sheetOpacity.setValue(0);
 
-      requestAnimationFrame(() => {
+      frameRef.current = requestAnimationFrame(() => {
+        frameRef.current = null;
         Animated.parallel([
           Animated.timing(backdropOpacity, {
             duration: BACKDROP_ENTER_DURATION,
-            easing: Easing.out(Easing.sin),
+            easing: Easing.out(Easing.cubic),
+            toValue: 1,
+            useNativeDriver: true,
+          }),
+          Animated.timing(sheetOpacity, {
+            duration: 120,
+            easing: Easing.out(Easing.cubic),
             toValue: 1,
             useNativeDriver: true,
           }),
           Animated.timing(sheetTranslateY, {
             duration: ENTER_DURATION,
-            easing: Easing.inOut(Easing.sin),
+            easing: Easing.out(Easing.cubic),
             toValue: 0,
             useNativeDriver: true,
           }),
         ]).start();
       });
-      return;
+      return () => {
+        if (frameRef.current !== null) {
+          cancelAnimationFrame(frameRef.current);
+          frameRef.current = null;
+        }
+      };
     }
+
+    sheetTranslateY.stopAnimation();
+    backdropOpacity.stopAnimation();
+    sheetOpacity.stopAnimation();
 
     Animated.parallel([
       Animated.timing(backdropOpacity, {
         duration: BACKDROP_EXIT_DURATION,
-        easing: Easing.in(Easing.sin),
+        easing: Easing.in(Easing.cubic),
+        toValue: 0,
+        useNativeDriver: true,
+      }),
+      Animated.timing(sheetOpacity, {
+        duration: 120,
+        easing: Easing.in(Easing.cubic),
         toValue: 0,
         useNativeDriver: true,
       }),
       Animated.timing(sheetTranslateY, {
         duration: EXIT_DURATION,
-        easing: Easing.in(Easing.quad),
+        easing: Easing.in(Easing.cubic),
         toValue: SHEET_OFFSET,
         useNativeDriver: true,
       }),
@@ -79,7 +110,7 @@ export function BottomSheetModal({
         setMounted(false);
       }
     });
-  }, [backdropOpacity, sheetTranslateY, visible]);
+  }, [backdropOpacity, sheetOpacity, sheetTranslateY, visible]);
 
   if (!mounted) {
     return null;
@@ -102,7 +133,13 @@ export function BottomSheetModal({
         ) : null}
         <View pointerEvents="box-none" style={styles.sheetPosition}>
           <Animated.View
-            style={[sheetStyle, { transform: [{ translateY: sheetTranslateY }] }]}>
+            style={[
+              sheetStyle,
+              {
+                opacity: sheetOpacity,
+                transform: [{ translateY: sheetTranslateY }],
+              },
+            ]}>
             {children}
           </Animated.View>
         </View>

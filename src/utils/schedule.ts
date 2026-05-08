@@ -13,14 +13,18 @@ export function isHabitScheduledForDate(habit: Habit, date: string): boolean {
     return weekdays.includes(getWeekdayNumber(date));
   }
 
-  if (habit.scheduleType === 'interval') {
-    const intervalDays = habit.scheduleIntervalDays;
+  if (habit.scheduleType === 'cycle' || habit.scheduleType === 'interval') {
+    const onDays = habit.scheduleOnDays ?? 1;
+    const offDays =
+      habit.scheduleOffDays ??
+      (habit.scheduleIntervalDays ? Math.max(habit.scheduleIntervalDays - 1, 0) : 0);
+    const cycleLength = onDays + offDays;
 
-    if (!intervalDays || intervalDays < 1) {
+    if (onDays < 1 || offDays < 0 || cycleLength < 1) {
       return false;
     }
 
-    return differenceInCalendarDaysLocal(scheduleStartDate, date) % intervalDays === 0;
+    return differenceInCalendarDaysLocal(scheduleStartDate, date) % cycleLength < onDays;
   }
 
   return true;

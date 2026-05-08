@@ -9,12 +9,14 @@ type TextInputFieldProps = TextInputProps & {
 };
 
 export function TextInputField({ label, error, helper, style, ...props }: TextInputFieldProps) {
+  const verticalAlignmentStyle = props.multiline ? styles.multilineInput : styles.singleLineInput;
+
   return (
     <View style={styles.container}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
         placeholderTextColor={colors.textSubtle}
-        style={[styles.input, error && styles.inputError, style]}
+        style={[styles.input, verticalAlignmentStyle, error && styles.inputError, style]}
         {...props}
       />
       {helper && !error ? <Text style={styles.helper}>{helper}</Text> : null}
@@ -41,6 +43,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceElevated,
     color: colors.text,
     ...typography.body,
+  },
+  singleLineInput: {
+    height: 52,
+    paddingVertical: 0,
+    fontSize: 16,       // whatever your font size is
+    lineHeight: 20,     // just slightly above fontSize, not 52
+  },
+  multilineInput: {
+    textAlignVertical: 'top',
   },
   inputError: {
     borderColor: colors.destructive,

@@ -117,6 +117,8 @@ export async function replaceAllDataWithImportedData(data: ImportedLocalData): P
           schedule_type,
           schedule_weekdays,
           schedule_interval_days,
+          schedule_on_days,
+          schedule_off_days,
           schedule_start_date,
           tracking_type,
           target_value,
@@ -126,7 +128,7 @@ export async function replaceAllDataWithImportedData(data: ImportedLocalData): P
           archived,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         [
           habit.id,
           habit.name,
@@ -142,6 +144,8 @@ export async function replaceAllDataWithImportedData(data: ImportedLocalData): P
           habit.scheduleType,
           habit.scheduleWeekdays ? JSON.stringify(habit.scheduleWeekdays) : null,
           habit.scheduleIntervalDays,
+          habit.scheduleOnDays,
+          habit.scheduleOffDays,
           habit.scheduleStartDate,
           habit.trackingType,
           habit.targetValue,
@@ -260,6 +264,8 @@ function parseHabit(value: unknown): Habit {
     scheduleType: parseScheduleType(row.scheduleType),
     scheduleWeekdays: parseWeekdays(row.scheduleWeekdays),
     scheduleIntervalDays: optionalPositiveInteger(row.scheduleIntervalDays),
+    scheduleOnDays: parseScheduleOnDays(row.scheduleOnDays, row.scheduleIntervalDays),
+    scheduleOffDays: parseScheduleOffDays(row.scheduleOffDays, row.scheduleIntervalDays),
     scheduleStartDate: optionalDateString(row.scheduleStartDate),
     trackingType: parseTrackingType(row.trackingType),
     targetValue: optionalPositiveNumber(row.targetValue),
@@ -380,7 +386,15 @@ function parseIconType(value: unknown): HabitIconType | null {
 }
 
 function parseScheduleType(value: unknown): HabitScheduleType {
-  return value === 'weekdays' || value === 'interval' ? value : 'daily';
+  if (value === 'weekdays' || value === 'cycle') {
+    return value;
+  }
+
+  if (value === 'interval') {
+    return 'cycle';
+  }
+
+  return 'daily';
 }
 
 function parseTrackingType(value: unknown): HabitTrackingType {
@@ -407,6 +421,30 @@ function parseWeekdays(value: unknown): number[] | null {
 
 function optionalPositiveInteger(value: unknown): number | null {
   return Number.isInteger(value) && Number(value) > 0 ? Number(value) : null;
+}
+
+function parseScheduleOnDays(value: unknown, legacyIntervalValue: unknown): number | null {
+  if (Number.isInteger(value) && Number(value) >= 1) {
+    return Number(value);
+  }
+
+  if (Number.isInteger(legacyIntervalValue) && Number(legacyIntervalValue) >= 1) {
+    return 1;
+  }
+
+  return null;
+}
+
+function parseScheduleOffDays(value: unknown, legacyIntervalValue: unknown): number | null {
+  if (Number.isInteger(value) && Number(value) >= 0) {
+    return Number(value);
+  }
+
+  if (Number.isInteger(legacyIntervalValue) && Number(legacyIntervalValue) >= 1) {
+    return Math.max(Number(legacyIntervalValue) - 1, 0);
+  }
+
+  return null;
 }
 
 function optionalInteger(value: unknown): number {

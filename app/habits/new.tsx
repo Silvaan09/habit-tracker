@@ -7,7 +7,7 @@ import { Screen } from '@/src/components/Screen';
 import { createHabit, updateHabitNotificationId } from '@/src/db/habits';
 import { createSubtask } from '@/src/db/subtasks';
 import { rescheduleHabitReminderForHabit } from '@/src/notifications/notifications';
-import { colors, radius, spacing, typography } from '@/src/theme';
+import { colors, spacing, typography } from '@/src/theme';
 import { safeBack } from '@/src/utils/navigation';
 
 export default function NewHabitScreen() {
@@ -54,9 +54,7 @@ export default function NewHabitScreen() {
       <View style={styles.header}>
         <Text style={styles.eyebrow}>Habits</Text>
         <Text style={styles.title}>New habit</Text>
-        <Text style={styles.subtitle}>
-          Shape a daily habit with a color, icon, and optional local reminder.
-        </Text>
+        <Text style={styles.subtitle}>Build a habit that fits your day.</Text>
       </View>
 
       <HabitForm
@@ -77,11 +75,6 @@ const styles = StyleSheet.create({
   },
   header: {
     gap: spacing.sm,
-    padding: spacing.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.xl,
-    backgroundColor: colors.surface,
   },
   eyebrow: {
     color: colors.primary,

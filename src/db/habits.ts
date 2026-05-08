@@ -23,6 +23,8 @@ type HabitRow = {
   schedule_type: string | null;
   schedule_weekdays: string | null;
   schedule_interval_days: number | null;
+  schedule_on_days: number | null;
+  schedule_off_days: number | null;
   schedule_start_date: string | null;
   tracking_type: string | null;
   target_value: number | null;
@@ -48,6 +50,8 @@ export type CreateHabitInput = {
   scheduleType?: HabitScheduleType;
   scheduleWeekdays?: number[] | null;
   scheduleIntervalDays?: number | null;
+  scheduleOnDays?: number | null;
+  scheduleOffDays?: number | null;
   scheduleStartDate?: string | null;
   trackingType?: HabitTrackingType;
   targetValue?: number | null;
@@ -79,9 +83,11 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
     reminderEnabled: input.reminderEnabled ?? false,
     reminderTime: input.reminderTime ?? null,
     notificationId: input.notificationId ?? null,
-    scheduleType: input.scheduleType ?? 'daily',
+    scheduleType: normalizeScheduleType(input.scheduleType ?? 'daily'),
     scheduleWeekdays: normalizeScheduleWeekdays(input.scheduleWeekdays),
     scheduleIntervalDays: normalizeScheduleIntervalDays(input.scheduleIntervalDays),
+    scheduleOnDays: normalizeScheduleOnDays(input.scheduleOnDays, input.scheduleIntervalDays),
+    scheduleOffDays: normalizeScheduleOffDays(input.scheduleOffDays, input.scheduleIntervalDays),
     scheduleStartDate: input.scheduleStartDate ?? getTodayDateString(),
     trackingType: input.trackingType ?? 'checkbox',
     targetValue: normalizeTargetValue(input.targetValue),
@@ -109,6 +115,8 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
       schedule_type,
       schedule_weekdays,
       schedule_interval_days,
+      schedule_on_days,
+      schedule_off_days,
       schedule_start_date,
       tracking_type,
       target_value,
@@ -118,7 +126,7 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
       archived,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       habit.id,
       habit.name,
@@ -134,6 +142,8 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
       habit.scheduleType,
       serializeScheduleWeekdays(habit.scheduleWeekdays),
       habit.scheduleIntervalDays,
+      habit.scheduleOnDays,
+      habit.scheduleOffDays,
       habit.scheduleStartDate,
       habit.trackingType,
       habit.targetValue,
@@ -167,6 +177,8 @@ export async function getActiveHabits(): Promise<Habit[]> {
       schedule_type,
       schedule_weekdays,
       schedule_interval_days,
+      schedule_on_days,
+      schedule_off_days,
       schedule_start_date,
       tracking_type,
       target_value,
@@ -202,6 +214,8 @@ export async function getAllHabits(): Promise<Habit[]> {
       schedule_type,
       schedule_weekdays,
       schedule_interval_days,
+      schedule_on_days,
+      schedule_off_days,
       schedule_start_date,
       tracking_type,
       target_value,
@@ -236,6 +250,8 @@ export async function getHabitById(id: string): Promise<Habit | null> {
       schedule_type,
       schedule_weekdays,
       schedule_interval_days,
+      schedule_on_days,
+      schedule_off_days,
       schedule_start_date,
       tracking_type,
       target_value,
@@ -328,6 +344,16 @@ export async function updateHabit(id: string, input: UpdateHabitInput): Promise<
   if (input.scheduleIntervalDays !== undefined) {
     updates.push('schedule_interval_days = ?');
     params.push(normalizeScheduleIntervalDays(input.scheduleIntervalDays));
+  }
+
+  if (input.scheduleOnDays !== undefined) {
+    updates.push('schedule_on_days = ?');
+    params.push(normalizeScheduleOnDays(input.scheduleOnDays, input.scheduleIntervalDays));
+  }
+
+  if (input.scheduleOffDays !== undefined) {
+    updates.push('schedule_off_days = ?');
+    params.push(normalizeScheduleOffDays(input.scheduleOffDays, input.scheduleIntervalDays));
   }
 
   if (input.scheduleStartDate !== undefined) {
@@ -466,6 +492,8 @@ function mapHabitRow(row: HabitRow): Habit {
     scheduleType: normalizeScheduleType(row.schedule_type),
     scheduleWeekdays: parseScheduleWeekdays(row.schedule_weekdays),
     scheduleIntervalDays: normalizeScheduleIntervalDays(row.schedule_interval_days),
+    scheduleOnDays: normalizeScheduleOnDays(row.schedule_on_days, row.schedule_interval_days),
+    scheduleOffDays: normalizeScheduleOffDays(row.schedule_off_days, row.schedule_interval_days),
     scheduleStartDate: row.schedule_start_date,
     trackingType: normalizeTrackingType(row.tracking_type),
     targetValue: normalizeTargetValue(row.target_value),
@@ -479,8 +507,12 @@ function mapHabitRow(row: HabitRow): Habit {
 }
 
 function normalizeScheduleType(scheduleType: string | null): HabitScheduleType {
-  if (scheduleType === 'weekdays' || scheduleType === 'interval') {
+  if (scheduleType === 'weekdays' || scheduleType === 'cycle') {
     return scheduleType;
+  }
+
+  if (scheduleType === 'interval') {
+    return 'cycle';
   }
 
   return 'daily';
@@ -522,6 +554,36 @@ function normalizeScheduleIntervalDays(intervalDays: number | null | undefined) 
   }
 
   return intervalDays;
+}
+
+function normalizeScheduleOnDays(
+  onDays: number | null | undefined,
+  legacyIntervalDays?: number | null
+) {
+  if (Number.isInteger(onDays) && Number(onDays) >= 1) {
+    return Number(onDays);
+  }
+
+  if (Number.isInteger(legacyIntervalDays) && Number(legacyIntervalDays) >= 1) {
+    return 1;
+  }
+
+  return null;
+}
+
+function normalizeScheduleOffDays(
+  offDays: number | null | undefined,
+  legacyIntervalDays?: number | null
+) {
+  if (Number.isInteger(offDays) && Number(offDays) >= 0) {
+    return Number(offDays);
+  }
+
+  if (Number.isInteger(legacyIntervalDays) && Number(legacyIntervalDays) >= 1) {
+    return Math.max(Number(legacyIntervalDays) - 1, 0);
+  }
+
+  return null;
 }
 
 function normalizeHabitIconType(iconType: string | null): HabitIconType | null {

@@ -13,6 +13,7 @@ import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  AppState,
   DeviceEventEmitter,
   GestureResponderEvent,
   NativeScrollEvent,
@@ -147,6 +148,7 @@ export default function TodayScreen() {
     getWeekStartDateString(getTodayDateString())
   );
   const selectedDateRef = useRef(selectedDate);
+  const actualTodayDateRef = useRef(actualTodayDate);
   const hasLoadedTodayDataRef = useRef(false);
   const todayScrollRef = useRef<ScrollView | null>(null);
   const todayScrollYRef = useRef(0);
@@ -177,6 +179,7 @@ export default function TodayScreen() {
   const loadTodayData = useCallback(async (dateToLoad: string) => {
     const currentToday = getTodayDateString();
 
+    actualTodayDateRef.current = currentToday;
     setActualTodayDate(currentToday);
     await initDatabase();
 
@@ -320,6 +323,10 @@ export default function TodayScreen() {
     () => formatDisplayDateDDMMYYYY(selectedDate),
     [selectedDate]
   );
+  const selectedDateFriendlyDisplay = useMemo(
+    () => format(parseISO(selectedDate), 'EEEE, MMM d'),
+    [selectedDate]
+  );
   const trackableHabitCount = Math.max(scheduledHabits.length - skippedCount, 0);
   const completionPercent =
     trackableHabitCount === 0 ? 0 : Math.round((completedCount / trackableHabitCount) * 100);
@@ -332,8 +339,15 @@ export default function TodayScreen() {
     [actualTodayDate, selectedDate]
   );
   const motivationLine = useMemo(
-    () => getMotivationLine(completionPercent),
-    [completionPercent]
+    () =>
+      getBuildDayHelperLine(
+        completionPercent,
+        remainingCount,
+        scheduledHabits.length,
+        selectedDate,
+        actualTodayDate
+      ),
+    [actualTodayDate, completionPercent, remainingCount, scheduledHabits.length, selectedDate]
   );
   const selectedDateLabel = useMemo(
     () => (selectedDate === actualTodayDate ? 'today' : format(parseISO(selectedDate), 'MMM d')),
@@ -389,6 +403,39 @@ export default function TodayScreen() {
     },
     [selectDate, visibleWeekStart]
   );
+
+  const syncActualTodayDate = useCallback(() => {
+    const nextToday = getTodayDateString();
+    const previousToday = actualTodayDateRef.current;
+
+    if (nextToday === previousToday) {
+      return;
+    }
+
+    actualTodayDateRef.current = nextToday;
+    setActualTodayDate(nextToday);
+
+    if (selectedDateRef.current === previousToday) {
+      setVisibleWeekStart(getWeekStartDateString(nextToday));
+      void selectDate(nextToday);
+    }
+  }, [selectDate]);
+
+  useEffect(() => {
+    syncActualTodayDate();
+
+    const intervalId = setInterval(syncActualTodayDate, 60 * 1000);
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        syncActualTodayDate();
+      }
+    });
+
+    return () => {
+      clearInterval(intervalId);
+      subscription.remove();
+    };
+  }, [syncActualTodayDate]);
 
   useEffect(() => {
     const subscription = DeviceEventEmitter.addListener(TODAY_TAB_RESELECT_EVENT, () => {
@@ -862,31 +909,20 @@ export default function TodayScreen() {
           <View style={styles.buildDayCopy}>
             <Text style={styles.buildDayEyebrow}>{selectedDayLabel}</Text>
             <Text style={styles.buildDayTitle}>Build the day</Text>
-            <Text style={styles.buildDayDate}>{selectedDateDisplay}</Text>
-            <Text style={styles.buildDaySummaryClean}>
-              {completedCount} done - {skippedCount} skipped - {remainingCount} left
-            </Text>
-            <Text style={styles.buildDaySummary}>
-              {completedCount} done · {skippedCount} skipped · {remainingCount} left
-            </Text>
+            <Text style={styles.buildDayDate}>{selectedDateFriendlyDisplay}</Text>
           </View>
 
           <View style={styles.buildDayPercent}>
             <Text style={styles.buildDayPercentValue}>{completionPercent}%</Text>
-            <Text style={styles.buildDayPercentLabel}>done</Text>
+            <Text style={styles.buildDayPercentLabel}>
+              {completedCount} of {trackableHabitCount} done
+            </Text>
           </View>
         </View>
 
-        <AnimatedProgressBar color={colors.primary} height={12} percent={completionPercent / 100} />
+        <AnimatedProgressBar color={colors.primary} height={6} percent={completionPercent / 100} />
 
-        <View style={styles.buildDayFooter}>
-          <Text style={styles.buildDayMotivation}>{motivationLine}</Text>
-          <Text style={styles.skipLimitText}>
-            {skipsRemainingThisWeek > 0
-              ? `${skipsRemainingThisWeek} skip left this week`
-              : 'No skips left this week'}
-          </Text>
-        </View>
+        <Text style={styles.buildDayMotivation}>{motivationLine}</Text>
       </View>
 
       <View style={styles.weekCardConnected} {...weekPanResponder.panHandlers}>
@@ -2080,13 +2116,31 @@ function getSelectedDayLabel(selectedDate: string, todayDate: string) {
   return format(parseISO(selectedDate), 'EEEE').toUpperCase();
 }
 
-function getMotivationLine(completionPercent: number) {
+function getBuildDayHelperLine(
+  completionPercent: number,
+  remainingCount: number,
+  scheduledCount: number,
+  selectedDate: string,
+  todayDate: string
+) {
+  if (selectedDate > todayDate) {
+    return 'Coming up!';
+  }
+
+  if (scheduledCount === 0) {
+    return 'This day is clear.';
+  }
+
+  if (selectedDate < todayDate) {
+    return completionPercent >= 100 ? 'Crushed it!' : "One miss doesn't stop you!";
+  }
+
   if (completionPercent >= 100) {
     return 'All done today - great work!';
   }
 
   if (completionPercent > 0) {
-    return 'Keep going!';
+    return `${remainingCount} habit${remainingCount === 1 ? '' : 's'} remaining - keep going!`;
   }
 
   return 'Start with one small step.';
@@ -2102,11 +2156,11 @@ function getHabitCardHint(habit: Habit) {
   }
 
   if (habit.scheduleType === 'weekdays') {
-    return 'Weekday schedule';
+    return 'Specific days';
   }
 
-  if (habit.scheduleType === 'interval') {
-    return `Every ${habit.scheduleIntervalDays ?? '?'} days`;
+  if (habit.scheduleType === 'cycle' || habit.scheduleType === 'interval') {
+    return `${habit.scheduleOnDays ?? 1} on / ${habit.scheduleOffDays ?? 0} off`;
   }
 
   return 'Daily habit';
@@ -2118,22 +2172,22 @@ const styles = StyleSheet.create({
     paddingBottom: 112,
   },
   buildDayCard: {
-    gap: spacing.md,
-    padding: spacing.lg,
+    gap: spacing.sm,
+    padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.xl,
+    borderRadius: radius.lg,
     backgroundColor: colors.surface,
   },
   buildDayHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    gap: spacing.lg,
+    gap: spacing.md,
   },
   buildDayCopy: {
     flex: 1,
-    gap: spacing.xs,
+    gap: 2,
   },
   buildDayEyebrow: {
     color: colors.primary,
@@ -2143,56 +2197,33 @@ const styles = StyleSheet.create({
   },
   buildDayTitle: {
     color: colors.text,
-    ...typography.heading,
+    fontSize: 24,
+    lineHeight: 28,
+    fontWeight: '900',
   },
   buildDayDate: {
-    color: colors.textMuted,
-    ...typography.body,
-    fontWeight: '800',
-  },
-  buildDaySummary: {
-    display: 'none',
-  },
-  buildDaySummaryClean: {
     color: colors.textMuted,
     ...typography.caption,
   },
   buildDayPercent: {
-    width: 78,
-    height: 78,
-    alignItems: 'center',
+    minWidth: 86,
+    alignItems: 'flex-end',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.primary,
-    borderRadius: radius.pill,
-    backgroundColor: colors.primaryMuted,
   },
   buildDayPercentValue: {
     color: colors.primary,
-    fontSize: 24,
-    lineHeight: 28,
+    fontSize: 28,
+    lineHeight: 32,
     fontWeight: '900',
   },
   buildDayPercentLabel: {
     color: colors.textMuted,
     ...typography.small,
-    textTransform: 'uppercase',
+    textAlign: 'right',
   },
   buildDayMotivation: {
-    color: colors.text,
-    ...typography.caption,
-    fontWeight: '800',
-  },
-  buildDayFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-  },
-  skipLimitText: {
-    color: colors.warning,
+    color: colors.textMuted,
     ...typography.small,
-    fontWeight: '900',
   },
   animatedProgressTrack: {
     overflow: 'hidden',

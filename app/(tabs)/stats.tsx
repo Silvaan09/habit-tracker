@@ -1,5 +1,13 @@
 import { useFocusEffect } from '@react-navigation/native';
-import { addDays, differenceInCalendarDays, format, startOfMonth, startOfYear } from 'date-fns';
+import {
+  addDays,
+  differenceInCalendarDays,
+  endOfMonth,
+  endOfYear,
+  format,
+  startOfMonth,
+  startOfYear,
+} from 'date-fns';
 import { router } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -144,12 +152,14 @@ export default function StatsScreen() {
     }
 
     const firstDate = getFirstHabitDate(habitStats);
-    const completeDayStats = firstDate
-      ? getCompleteDayStreakStats(getRangeDayStats(firstDate, today, toDayStatsHabits(habitStats)))
-      : { currentStreak: 0, longestStreak: 0 };
+    const globalDayStats = firstDate
+      ? getRangeDayStats(firstDate, today, toDayStatsHabits(habitStats))
+      : [];
+    const completeDayStats = getCompleteDayStreakStats(globalDayStats);
 
     return {
       activeHabitsCount: habitStats.length,
+      averageDailyCompletion: calculateAverageDailyCompletion(globalDayStats),
       currentStreak: completeDayStats.currentStreak,
       longestStreak: completeDayStats.longestStreak,
       totalCompletions,
@@ -163,6 +173,10 @@ export default function StatsScreen() {
   );
   const rangeStartDate = useMemo(
     () => getRangeStartDate(selectedRange, today),
+    [selectedRange, today]
+  );
+  const heatmapEndDate = useMemo(
+    () => getHeatmapEndDate(selectedRange, today),
     [selectedRange, today]
   );
   const rangeDayStats = useMemo(
@@ -179,10 +193,6 @@ export default function StatsScreen() {
   const selectedRangeCompletionRate = useMemo(
     () => getActivityCompletionRate(rangeActivity),
     [rangeActivity]
-  );
-  const selectedRangeAverageDailyCompletion = useMemo(
-    () => calculateAverageDailyCompletion(rangeDayStats),
-    [rangeDayStats]
   );
   const rangeCompletedDays = useMemo(() => countFullyCompletedDays(rangeDayStats), [rangeDayStats]);
   const rangeTrackedDays = useMemo(() => countTrackedDays(rangeDayStats), [rangeDayStats]);
@@ -280,7 +290,7 @@ export default function StatsScreen() {
               ) : (
                 <ActivityHeatmap
                   days={rangeActivity}
-                  endDate={today}
+                  endDate={heatmapEndDate}
                   rangeTitle={getHeatmapRangeTitle(selectedRange, today)}
                   showMonthLabels
                   startDate={rangeStartDate}
@@ -305,7 +315,7 @@ export default function StatsScreen() {
             />
             <StatCard
               label="Avg daily completion"
-              value={`${Math.round(selectedRangeAverageDailyCompletion * 100)}%`}
+              value={`${Math.round(stats.averageDailyCompletion * 100)}%`}
             />
           </View>
 
@@ -521,6 +531,20 @@ function getRangeStartDate(range: StatsRange, today: string) {
   }
 
   return format(addDays(todayDate, -6), 'yyyy-MM-dd');
+}
+
+function getHeatmapEndDate(range: StatsRange, today: string) {
+  const todayDate = parseDateString(today);
+
+  if (range === 'year') {
+    return format(endOfYear(todayDate), 'yyyy-MM-dd');
+  }
+
+  if (range === 'month') {
+    return format(endOfMonth(todayDate), 'yyyy-MM-dd');
+  }
+
+  return today;
 }
 
 const styles = StyleSheet.create({

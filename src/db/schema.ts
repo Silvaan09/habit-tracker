@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS habits (
   schedule_type TEXT NOT NULL DEFAULT 'daily',
   schedule_weekdays TEXT,
   schedule_interval_days INTEGER,
+  schedule_on_days INTEGER,
+  schedule_off_days INTEGER,
   schedule_start_date TEXT,
   tracking_type TEXT NOT NULL DEFAULT 'checkbox',
   target_value REAL,

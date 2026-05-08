@@ -78,6 +78,14 @@ async function ensureHabitColumns(db: SQLiteDatabase) {
       name: 'schedule_interval_days',
       sql: 'ALTER TABLE habits ADD COLUMN schedule_interval_days INTEGER;',
     },
+    {
+      name: 'schedule_on_days',
+      sql: 'ALTER TABLE habits ADD COLUMN schedule_on_days INTEGER;',
+    },
+    {
+      name: 'schedule_off_days',
+      sql: 'ALTER TABLE habits ADD COLUMN schedule_off_days INTEGER;',
+    },
     { name: 'schedule_start_date', sql: 'ALTER TABLE habits ADD COLUMN schedule_start_date TEXT;' },
     {
       name: 'tracking_type',

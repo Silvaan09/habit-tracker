@@ -75,6 +75,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     paddingHorizontal: 16,
+    marginBottom: -48, // pull content closer
     backgroundColor: colors.background,
   },
   headerTitle: {
