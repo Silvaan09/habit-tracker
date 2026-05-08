@@ -238,6 +238,8 @@ const styles = StyleSheet.create({
     ...typography.body,
     fontSize: 16,
     lineHeight: 20,
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   iconSections: {
     minHeight: 360,

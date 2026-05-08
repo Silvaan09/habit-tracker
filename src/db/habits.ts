@@ -333,7 +333,7 @@ export async function updateHabit(id: string, input: UpdateHabitInput): Promise<
 
   if (input.scheduleType !== undefined) {
     updates.push('schedule_type = ?');
-    params.push(input.scheduleType);
+    params.push(normalizeScheduleType(input.scheduleType));
   }
 
   if (input.scheduleWeekdays !== undefined) {

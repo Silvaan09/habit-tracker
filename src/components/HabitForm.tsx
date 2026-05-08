@@ -906,7 +906,7 @@ function getSchedulePreview(
   }
 
   if (scheduleType === 'cycle' || scheduleType === 'interval') {
-    return `${onDays || 'X'} days on · ${offDays || 'Y'} days off from ${displayStartDate}`;
+    return `${onDays || 'X'} days on - ${offDays || 'Y'} days off from ${displayStartDate}`;
   }
 
   return `Every day from ${displayStartDate}`;

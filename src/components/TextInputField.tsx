@@ -47,8 +47,8 @@ const styles = StyleSheet.create({
   singleLineInput: {
     height: 52,
     paddingVertical: 0,
-    fontSize: 16,       // whatever your font size is
-    lineHeight: 20,     // just slightly above fontSize, not 52
+    fontSize: 16,
+    lineHeight: 20,
   },
   multilineInput: {
     textAlignVertical: 'top',

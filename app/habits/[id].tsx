@@ -64,6 +64,7 @@ export default function HabitDetailScreen() {
     [completions]
   );
   const skippedDates = useMemo(() => skips.map((skip) => skip.date), [skips]);
+  const progressDateIsSkipped = skippedDates.includes(progressDate);
   const currentStreak = useMemo(
     () =>
       habit
@@ -204,7 +205,7 @@ export default function HabitDetailScreen() {
   }
 
   async function toggleSubtask(subtaskId: string) {
-    if (!habitId) {
+    if (!habitId || progressDateIsFuture || progressDateIsSkipped) {
       return;
     }
 
@@ -232,7 +233,7 @@ export default function HabitDetailScreen() {
   }
 
   async function saveNumericProgress() {
-    if (!habitId) {
+    if (!habitId || progressDateIsFuture || progressDateIsSkipped) {
       return;
     }
 
@@ -291,7 +292,7 @@ export default function HabitDetailScreen() {
           <View style={styles.headerCopy}>
             <Text style={styles.eyebrow}>Habit detail</Text>
             <Text style={styles.title}>{habit.name}</Text>
-            <Text style={styles.subtitle}>{habit.description ?? 'Daily habit'}</Text>
+            <Text style={styles.subtitle}>{habit.description ?? 'Habit'}</Text>
           </View>
         </View>
 
@@ -349,6 +350,9 @@ export default function HabitDetailScreen() {
               {progressDateIsFuture ? (
                 <Text style={styles.progressText}>Future days cannot be completed yet.</Text>
               ) : null}
+              {progressDateIsSkipped ? (
+                <Text style={styles.progressText}>Undo the skip before changing this day.</Text>
+              ) : null}
               {subtasks.map((subtask) => {
                 const completed = subtaskCompletions.some(
                   (completion) => completion.subtaskId === subtask.id
@@ -359,14 +363,15 @@ export default function HabitDetailScreen() {
                     accessibilityLabel={`${completed ? 'Uncheck' : 'Check'} ${subtask.title}`}
                     accessibilityRole="checkbox"
                     accessibilityState={{ checked: completed }}
-                    disabled={updatingProgress || progressDateIsFuture}
+                    disabled={updatingProgress || progressDateIsFuture || progressDateIsSkipped}
                     key={subtask.id}
                     onPress={() => toggleSubtask(subtask.id)}
                     style={({ pressed }) => [
                       styles.subtaskRow,
                       completed && styles.completedSubtaskRow,
                       pressed && styles.pressed,
-                      (updatingProgress || progressDateIsFuture) && styles.disabled,
+                      (updatingProgress || progressDateIsFuture || progressDateIsSkipped) &&
+                        styles.disabled,
                     ]}>
                     <View style={[styles.subtaskCheck, completed && styles.completedSubtaskCheck]}>
                       {completed ? (
@@ -399,7 +404,7 @@ export default function HabitDetailScreen() {
           </View>
           <TextInput
             accessibilityLabel="Numeric progress value"
-            editable={!updatingProgress && !progressDateIsFuture}
+            editable={!updatingProgress && !progressDateIsFuture && !progressDateIsSkipped}
             keyboardType="decimal-pad"
             onChangeText={(value) => setNumericValue(value.replace(/[^0-9.,]/g, ''))}
             placeholder="0"
@@ -415,8 +420,11 @@ export default function HabitDetailScreen() {
           {progressDateIsFuture ? (
             <Text style={styles.progressText}>Future days cannot be completed yet.</Text>
           ) : null}
+          {progressDateIsSkipped ? (
+            <Text style={styles.progressText}>Undo the skip before changing this day.</Text>
+          ) : null}
           <PrimaryButton
-            disabled={updatingProgress || progressDateIsFuture}
+            disabled={updatingProgress || progressDateIsFuture || progressDateIsSkipped}
             onPress={saveNumericProgress}
             title={updatingProgress ? 'Saving...' : 'Save Progress'}
           />

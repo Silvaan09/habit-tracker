@@ -2424,15 +2424,20 @@ function getLayoutSortedHabits(habits: Habit[]) {
     return habits;
   }
 
-  return [...habits].sort((first, second) => {
-    const orderDifference = first.todayLayoutOrder - second.todayLayoutOrder;
+  return habits
+    .map((habit, index) => ({ habit, index }))
+    .sort((first, second) => {
+      const firstOrder = first.habit.todayLayoutOrder || Number.MAX_SAFE_INTEGER;
+      const secondOrder = second.habit.todayLayoutOrder || Number.MAX_SAFE_INTEGER;
+      const orderDifference = firstOrder - secondOrder;
 
-    if (orderDifference !== 0) {
-      return orderDifference;
-    }
+      if (orderDifference !== 0) {
+        return orderDifference;
+      }
 
-    return first.name.localeCompare(second.name);
-  });
+      return first.index - second.index;
+    })
+    .map((item) => item.habit);
 }
 
 function getLayoutSizeBadgeLabel(habit: Habit) {
