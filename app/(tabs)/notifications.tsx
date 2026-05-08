@@ -8,17 +8,23 @@ import { HabitIcon } from '@/src/components/HabitIcon';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { ReminderEditorModal } from '@/src/components/ReminderEditorModal';
 import { Screen } from '@/src/components/Screen';
+import { getCompletionsForHabit } from '@/src/db/completions';
 import { initDatabase } from '@/src/db/database';
 import { getActiveHabits } from '@/src/db/habits';
+import { getSkipsForHabit } from '@/src/db/skips';
 import {
   getNotificationPermissionStatus,
   requestNotificationPermissions,
 } from '@/src/notifications/notifications';
 import { colors, radius, spacing, typography } from '@/src/theme';
 import type { Habit } from '@/src/types/Habit';
+import { getTodayDateString } from '@/src/utils/dates';
+import { getDayCompletionStatus, type DayStatsHabit } from '@/src/utils/dayStats';
 
 export default function NotificationsScreen() {
   const [habits, setHabits] = useState<Habit[]>([]);
+  const [habitCompletions, setHabitCompletions] = useState<Record<string, string[]>>({});
+  const [habitSkips, setHabitSkips] = useState<Record<string, string[]>>({});
   const [permissionStatus, setPermissionStatus] = useState('loading');
   const [loading, setLoading] = useState(true);
   const [requesting, setRequesting] = useState(false);
@@ -26,12 +32,31 @@ export default function NotificationsScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [editingReminderHabit, setEditingReminderHabit] = useState<Habit | null>(null);
 
+  const today = getTodayDateString();
+
   const reminderHabits = useMemo(
     () =>
       habits
         .filter((habit) => habit.reminderEnabled && habit.reminderTime)
         .sort((first, second) => (first.reminderTime ?? '').localeCompare(second.reminderTime ?? '')),
     [habits]
+  );
+  const reminderPercent =
+    habits.length === 0 ? 0 : Math.round((reminderHabits.length / habits.length) * 100);
+
+  const dayStatsHabits = useMemo<DayStatsHabit[]>(
+    () =>
+      habits.map((habit) => ({
+        habit,
+        completionDates: habitCompletions[habit.id] ?? [],
+        skipDates: habitSkips[habit.id] ?? [],
+      })),
+    [habits, habitCompletions, habitSkips]
+  );
+
+  const todayActivity = useMemo(
+    () => getDayCompletionStatus(today, dayStatsHabits),
+    [dayStatsHabits, today]
   );
 
   const loadNotificationsData = useCallback(async () => {
@@ -44,7 +69,27 @@ export default function NotificationsScreen() {
       getNotificationPermissionStatus(),
     ]);
 
+    const [completionsByHabit, skipsByHabit] = await Promise.all([
+      Promise.all(activeHabits.map((habit) => getCompletionsForHabit(habit.id))),
+      Promise.all(activeHabits.map((habit) => getSkipsForHabit(habit.id))),
+    ]);
+
+    const completionMap = Object.fromEntries(
+      activeHabits.map((habit, index) => [
+        habit.id,
+        completionsByHabit[index].map((c) => c.date),
+      ])
+    );
+    const skipMap = Object.fromEntries(
+      activeHabits.map((habit, index) => [
+        habit.id,
+        skipsByHabit[index].map((s) => s.date),
+      ])
+    );
+
     setHabits(activeHabits);
+    setHabitCompletions(completionMap);
+    setHabitSkips(skipMap);
     setPermissionStatus(status);
     setLoading(false);
   }, []);
@@ -114,8 +159,17 @@ export default function NotificationsScreen() {
   return (
     <Screen contentContainerStyle={styles.content}>
       <View style={styles.header}>
-        <Text style={styles.title}>Reminders</Text>
-        <Text style={styles.subtitle}>{"Manage the habit reminders you've set."}</Text>
+        <View style={styles.headerCopy}>
+          <Text style={styles.eyebrow}>Notifications</Text>
+          <Text style={styles.title}>Reminders</Text>
+          <Text style={styles.subtitle}>{"Manage the habit reminders you've set."}</Text>
+        </View>
+        <View style={styles.headerPill}>
+          <Text style={styles.headerPillValue}>
+            {Math.round(todayActivity.completionRate * 100)}%
+          </Text>
+          <Text style={styles.headerPillLabel}>Today</Text>
+        </View>
       </View>
 
       {errorMessage ? (
@@ -265,12 +319,31 @@ const styles = StyleSheet.create({
     paddingBottom: 112,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
     gap: spacing.sm,
-    padding: spacing.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.xl,
-    backgroundColor: colors.surface,
+  },
+  headerCopy: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  headerPill: {
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primaryMuted,
+  },
+  headerPillValue: {
+    color: colors.primary,
+    ...typography.body,
+    fontWeight: '900',
+  },
+  headerPillLabel: {
+    color: colors.textMuted,
+    ...typography.small,
   },
   eyebrow: {
     color: colors.primary,

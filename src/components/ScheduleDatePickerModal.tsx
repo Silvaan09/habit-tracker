@@ -1,5 +1,5 @@
 import { addDays, addMonths, format, parseISO, startOfMonth, startOfWeek } from 'date-fns';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { BottomSheetModal } from '@/src/components/BottomSheetModal';
@@ -22,15 +22,26 @@ export function ScheduleDatePickerModal({
   const [visibleMonth, setVisibleMonth] = useState(() =>
     format(startOfMonth(parseISO(selectedDate)), 'yyyy-MM-dd')
   );
+  const [draftDate, setDraftDate] = useState(selectedDate);
   const today = getTodayDateString();
   const monthLabel = useMemo(() => format(parseISO(visibleMonth), 'MMMM yyyy'), [visibleMonth]);
   const days = useMemo(
-    () => getCalendarMonthDays(visibleMonth, today, selectedDate),
-    [selectedDate, today, visibleMonth]
+    () => getCalendarMonthDays(visibleMonth, today, draftDate),
+    [draftDate, today, visibleMonth]
   );
+  const weeks = useMemo(() => chunkCalendarWeeks(days), [days]);
 
-  function chooseDate(date: string) {
-    onSelectDate(date);
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
+
+    setDraftDate(selectedDate);
+    setVisibleMonth(format(startOfMonth(parseISO(selectedDate)), 'yyyy-MM-dd'));
+  }, [selectedDate, visible]);
+
+  function applyDate() {
+    onSelectDate(draftDate);
     onClose();
   }
 
@@ -39,7 +50,7 @@ export function ScheduleDatePickerModal({
       <View style={styles.header}>
         <View>
           <Text style={styles.eyebrow}>Start date</Text>
-          <Text style={styles.title}>{formatDisplayDateDDMMYYYY(selectedDate)}</Text>
+          <Text style={styles.title}>{monthLabel}</Text>
         </View>
         <Pressable
           accessibilityLabel="Close date picker"
@@ -50,7 +61,7 @@ export function ScheduleDatePickerModal({
         </Pressable>
       </View>
 
-      <View style={styles.monthHeader}>
+      <View style={styles.monthNav}>
         <Pressable
           accessibilityLabel="Previous month"
           accessibilityRole="button"
@@ -60,7 +71,16 @@ export function ScheduleDatePickerModal({
           style={({ pressed }) => [styles.monthButton, pressed && styles.pressed]}>
           <Text style={styles.monthButtonText}>{'<'}</Text>
         </Pressable>
-        <Text style={styles.monthTitle}>{monthLabel}</Text>
+        <Pressable
+          accessibilityLabel="Jump to today"
+          accessibilityRole="button"
+          onPress={() => {
+            setVisibleMonth(format(startOfMonth(parseISO(today)), 'yyyy-MM-dd'));
+            setDraftDate(today);
+          }}
+          style={({ pressed }) => [styles.jumpTodayButton, pressed && styles.pressed]}>
+          <Text style={styles.jumpTodayText}>Jump to today</Text>
+        </Pressable>
         <Pressable
           accessibilityLabel="Next month"
           accessibilityRole="button"
@@ -81,37 +101,45 @@ export function ScheduleDatePickerModal({
       </View>
 
       <View style={styles.calendarGrid}>
-        {days.map((day) => (
-          <Pressable
-            accessibilityLabel={`Choose ${formatDisplayDateDDMMYYYY(day.date)}`}
-            accessibilityRole="button"
-            accessibilityState={{ selected: day.isSelected }}
-            key={day.date}
-            onPress={() => chooseDate(day.date)}
-            style={({ pressed }) => [
-              styles.dayButton,
-              !day.isCurrentMonth && styles.outsideMonthDay,
-              day.isToday && styles.todayDay,
-              day.isSelected && styles.selectedDay,
-              pressed && styles.pressed,
-            ]}>
-            <Text style={[styles.dayText, day.isSelected && styles.selectedDayText]}>
-              {day.day}
-            </Text>
-          </Pressable>
+        {weeks.map((week) => (
+          <View key={week.map((day) => day.date).join('-')} style={styles.calendarWeekRow}>
+            {week.map((day) => (
+              <Pressable
+                accessibilityLabel={`Choose ${formatDisplayDateDDMMYYYY(day.date)}`}
+                accessibilityRole="button"
+                accessibilityState={{ selected: day.isSelected }}
+                key={day.date}
+                onPress={() => setDraftDate(day.date)}
+                style={({ pressed }) => [
+                  styles.dayButton,
+                  !day.isCurrentMonth && styles.outsideMonthDay,
+                  day.isToday && styles.todayDay,
+                  day.isSelected && styles.selectedDay,
+                  pressed && styles.pressed,
+                ]}>
+                <Text
+                  style={[
+                    styles.dayText,
+                    !day.isCurrentMonth && styles.outsideMonthDayText,
+                    day.isSelected && styles.selectedDayText,
+                  ]}>
+                  {day.day}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
         ))}
       </View>
 
-      <Pressable
-        accessibilityLabel="Jump to today"
-        accessibilityRole="button"
-        onPress={() => {
-          setVisibleMonth(format(startOfMonth(parseISO(today)), 'yyyy-MM-dd'));
-          chooseDate(today);
-        }}
-        style={({ pressed }) => [styles.todayButton, pressed && styles.pressed]}>
-        <Text style={styles.todayButtonText}>Jump to today</Text>
-      </Pressable>
+      <View style={styles.actions}>
+        <Pressable
+          accessibilityLabel={`Apply ${formatDisplayDateDDMMYYYY(draftDate)} as start date`}
+          accessibilityRole="button"
+          onPress={applyDate}
+          style={({ pressed }) => [styles.applyButton, pressed && styles.pressed]}>
+          <Text style={styles.applyButtonText}>Apply date</Text>
+        </Pressable>
+      </View>
     </BottomSheetModal>
   );
 }
@@ -134,15 +162,20 @@ function getCalendarMonthDays(monthDate: string, todayDate: string, selectedDate
   });
 }
 
+function chunkCalendarWeeks<T>(days: T[]) {
+  return Array.from({ length: Math.ceil(days.length / 7) }, (_, index) =>
+    days.slice(index * 7, index * 7 + 7)
+  );
+}
+
 const styles = StyleSheet.create({
   sheet: {
     gap: spacing.lg,
     padding: spacing.xl,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.background,
+    borderRadius: radius.xl,
+    backgroundColor: colors.surface,
   },
   header: {
     flexDirection: 'row',
@@ -164,18 +197,19 @@ const styles = StyleSheet.create({
     minHeight: 38,
     justifyContent: 'center',
     paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
     borderRadius: radius.pill,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceElevated,
   },
   closeButtonText: {
-    color: colors.text,
-    ...typography.small,
+    color: colors.textMuted,
+    ...typography.caption,
     fontWeight: '900',
   },
-  monthHeader: {
+  monthNav: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: spacing.md,
   },
   monthButton: {
@@ -184,19 +218,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radius.pill,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceElevated,
   },
   monthButtonText: {
     color: colors.primary,
     fontSize: 22,
     fontWeight: '900',
   },
-  monthTitle: {
+  jumpTodayButton: {
     flex: 1,
-    color: colors.text,
-    ...typography.body,
+    minHeight: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primaryMuted,
+  },
+  jumpTodayText: {
+    color: colors.primary,
+    ...typography.caption,
     fontWeight: '900',
-    textAlign: 'center',
   },
   weekdays: {
     flexDirection: 'row',
@@ -209,20 +251,22 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   calendarGrid: {
+    gap: spacing.xs,
+  },
+  calendarWeekRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: spacing.xs,
   },
   dayButton: {
-    width: `${100 / 7}%`,
-    maxWidth: 45,
+    flex: 1,
     aspectRatio: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 0,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceElevated,
   },
   outsideMonthDay: {
     opacity: 0.34,
@@ -235,21 +279,30 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   dayText: {
-    color: colors.textMuted,
-    ...typography.small,
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 16,
     fontWeight: '900',
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
+  outsideMonthDayText: {
+    color: colors.textSubtle,
   },
   selectedDayText: {
     color: colors.background,
   },
-  todayButton: {
+  actions: {
+    gap: spacing.md,
+  },
+  applyButton: {
     minHeight: 46,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radius.pill,
     backgroundColor: colors.primary,
   },
-  todayButtonText: {
+  applyButtonText: {
     color: colors.background,
     ...typography.caption,
     fontWeight: '900',

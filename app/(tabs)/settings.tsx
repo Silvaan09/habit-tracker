@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Alert, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 
 import { BottomSheetModal } from '@/src/components/BottomSheetModal';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { Screen } from '@/src/components/Screen';
-import { getAllCompletions } from '@/src/db/completions';
+import { getAllCompletions, getCompletionsForHabit } from '@/src/db/completions';
 import { initDatabase } from '@/src/db/database';
 import {
   parseImportedLocalData,
@@ -13,12 +14,15 @@ import {
 } from '@/src/db/importData';
 import { getAllNumericEntries } from '@/src/db/numericEntries';
 import { resetAllData } from '@/src/db/reset';
-import { getAllHabits } from '@/src/db/habits';
-import { getAllSkips } from '@/src/db/skips';
+import { getAllHabits, getActiveHabits } from '@/src/db/habits';
+import { getAllSkips, getSkipsForHabit } from '@/src/db/skips';
 import { getAllSettings } from '@/src/db/settings';
 import { getAllSubtaskCompletions, getAllSubtasks } from '@/src/db/subtasks';
 import { cancelHabitReminderForHabit } from '@/src/notifications/notifications';
 import { colors, radius, spacing, typography } from '@/src/theme';
+import type { Habit } from '@/src/types/Habit';
+import { getTodayDateString } from '@/src/utils/dates';
+import { getDayCompletionStatus, type DayStatsHabit } from '@/src/utils/dayStats';
 
 export default function SettingsScreen() {
   const [exporting, setExporting] = useState(false);
@@ -28,6 +32,60 @@ export default function SettingsScreen() {
   const [importErrorMessage, setImportErrorMessage] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [habits, setHabits] = useState<Habit[]>([]);
+  const [habitCompletions, setHabitCompletions] = useState<Record<string, string[]>>({});
+  const [habitSkips, setHabitSkips] = useState<Record<string, string[]>>({});
+
+  const today = getTodayDateString();
+
+  const dayStatsHabits = useMemo<DayStatsHabit[]>(
+    () =>
+      habits.map((habit) => ({
+        habit,
+        completionDates: habitCompletions[habit.id] ?? [],
+        skipDates: habitSkips[habit.id] ?? [],
+      })),
+    [habits, habitCompletions, habitSkips]
+  );
+
+  const todayActivity = useMemo(
+    () => getDayCompletionStatus(today, dayStatsHabits),
+    [dayStatsHabits, today]
+  );
+
+  const loadActivityData = useCallback(async () => {
+    await initDatabase();
+    const activeHabits = await getActiveHabits();
+    const [completionsByHabit, skipsByHabit] = await Promise.all([
+      Promise.all(activeHabits.map((habit) => getCompletionsForHabit(habit.id))),
+      Promise.all(activeHabits.map((habit) => getSkipsForHabit(habit.id))),
+    ]);
+
+    const completionMap = Object.fromEntries(
+      activeHabits.map((habit, index) => [
+        habit.id,
+        completionsByHabit[index].map((c) => c.date),
+      ])
+    );
+    const skipMap = Object.fromEntries(
+      activeHabits.map((habit, index) => [
+        habit.id,
+        skipsByHabit[index].map((s) => s.date),
+      ])
+    );
+
+    setHabits(activeHabits);
+    setHabitCompletions(completionMap);
+    setHabitSkips(skipMap);
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadActivityData().catch((error) => {
+        console.error('Failed to load activity data for settings screen', error);
+      });
+    }, [loadActivityData])
+  );
 
   async function handleExportData() {
     try {
@@ -36,7 +94,7 @@ export default function SettingsScreen() {
       await initDatabase();
 
       const [
-        habits,
+        allHabits,
         completions,
         skips,
         subtasks,
@@ -55,7 +113,7 @@ export default function SettingsScreen() {
       const exportJson = JSON.stringify(
         {
           exportedAt: new Date().toISOString(),
-          habits,
+          habits: allHabits,
           habit_completions: completions,
           habit_skips: skips,
           habit_subtasks: subtasks,
@@ -117,9 +175,9 @@ export default function SettingsScreen() {
       setImporting(true);
       setMessage(null);
       await initDatabase();
-      const habits = await getAllHabits();
+      const allHabits = await getAllHabits();
       const cancelResults = await Promise.allSettled(
-        habits.map((habit) => cancelHabitReminderForHabit(habit))
+        allHabits.map((habit) => cancelHabitReminderForHabit(habit))
       );
 
       for (const result of cancelResults) {
@@ -135,6 +193,7 @@ export default function SettingsScreen() {
       setMessage(
         'Import complete. Reminder schedules were disabled during import; re-enable reminders on habits that need them.'
       );
+      await loadActivityData();
     } catch (error) {
       console.error('Failed to import local data', error);
       setImportErrorMessage('Could not import local data. Check the JSON and try again.');
@@ -163,9 +222,9 @@ export default function SettingsScreen() {
       setResetting(true);
       setMessage(null);
       await initDatabase();
-      const habits = await getAllHabits();
+      const allHabits = await getAllHabits();
       const cancelResults = await Promise.allSettled(
-        habits.map((habit) => cancelHabitReminderForHabit(habit))
+        allHabits.map((habit) => cancelHabitReminderForHabit(habit))
       );
 
       for (const result of cancelResults) {
@@ -176,6 +235,7 @@ export default function SettingsScreen() {
 
       await resetAllData();
       setMessage('All local habit data has been reset on this device.');
+      await loadActivityData();
     } catch (error) {
       console.error('Failed to reset all local data', error);
       setMessage('Could not reset local data. Please try again.');
@@ -187,9 +247,17 @@ export default function SettingsScreen() {
   return (
     <Screen contentContainerStyle={styles.content}>
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>Settings</Text>
-        <Text style={styles.title}>Settings</Text>
-        <Text style={styles.subtitle}>Manage local data and app info.</Text>
+        <View style={styles.headerCopy}>
+          <Text style={styles.eyebrow}>App</Text>
+          <Text style={styles.title}>Settings</Text>
+          <Text style={styles.subtitle}>Manage local data and app info.</Text>
+        </View>
+        <View style={styles.headerPill}>
+          <Text style={styles.headerPillValue}>
+            {Math.round(todayActivity.completionRate * 100)}%
+          </Text>
+          <Text style={styles.headerPillLabel}>Today</Text>
+        </View>
       </View>
 
       {message ? (
@@ -309,12 +377,31 @@ const styles = StyleSheet.create({
     paddingBottom: 156,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
     gap: spacing.sm,
-    padding: spacing.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.xl,
-    backgroundColor: colors.surface,
+  },
+  headerCopy: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  headerPill: {
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primaryMuted,
+  },
+  headerPillValue: {
+    color: colors.primary,
+    ...typography.body,
+    fontWeight: '900',
+  },
+  headerPillLabel: {
+    color: colors.textMuted,
+    ...typography.small,
   },
   eyebrow: {
     color: colors.primary,
