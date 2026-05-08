@@ -16,6 +16,7 @@ type ScreenProps = PropsWithChildren<{
   scrollRef?: Ref<ScrollView>;
   onScroll?: ScrollViewProps['onScroll'];
   scrollEventThrottle?: ScrollViewProps['scrollEventThrottle'];
+  scrollEnabled?: ScrollViewProps['scrollEnabled'];
   style?: StyleProp<ViewStyle>;
   contentContainerStyle?: StyleProp<ViewStyle>;
 }>;
@@ -26,6 +27,7 @@ export function Screen({
   scrollRef,
   onScroll,
   scrollEventThrottle,
+  scrollEnabled,
   style,
   contentContainerStyle,
 }: ScreenProps) {
@@ -43,6 +45,7 @@ export function Screen({
         ref={scrollRef}
         contentContainerStyle={[styles.content, contentContainerStyle]}
         onScroll={onScroll}
+        scrollEnabled={scrollEnabled}
         scrollEventThrottle={scrollEventThrottle}
         showsVerticalScrollIndicator={false}>
         {children}

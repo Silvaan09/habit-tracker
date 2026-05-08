@@ -10,6 +10,7 @@ export type ScheduleHabitReminderInput = {
   habitId: string;
   habitName: string;
   reminderTime: string;
+  trackingType?: Habit['trackingType'];
 };
 
 Notifications.setNotificationHandler({
@@ -69,7 +70,7 @@ export async function scheduleHabitReminder(
   return Notifications.scheduleNotificationAsync({
     content: {
       title: getHabitReminderTitle(input.habitName),
-      body: getHabitReminderBody(input.habitName),
+      body: getHabitReminderBody(input.trackingType),
       data: {
         habitId: input.habitId,
       },
@@ -105,6 +106,7 @@ export async function rescheduleHabitReminderForHabit(habit: Habit): Promise<str
     habitId: habit.id,
     habitName: habit.name,
     reminderTime: habit.reminderTime,
+    trackingType: habit.trackingType,
   });
 }
 
@@ -137,18 +139,20 @@ function getHabitReminderTitle(habitName: string) {
   const trimmedHabitName = habitName.trim();
 
   if (trimmedHabitName.length === 0) {
-    return 'Habit check-in';
+    return 'Reminder';
   }
 
-  return `Time for ${trimmedHabitName}`;
+  return trimmedHabitName;
 }
 
-function getHabitReminderBody(habitName: string) {
-  const trimmedHabitName = habitName.trim();
-
-  if (trimmedHabitName.length === 0) {
-    return 'Tap to open your habits.';
+function getHabitReminderBody(trackingType?: Habit['trackingType']) {
+  if (trackingType === 'numeric') {
+    return "Add your progress when you're ready.";
   }
 
-  return `${trimmedHabitName} is scheduled for today.`;
+  if (trackingType === 'subtasks') {
+    return "Check off what you've done today.";
+  }
+
+  return 'Reminder for today.';
 }

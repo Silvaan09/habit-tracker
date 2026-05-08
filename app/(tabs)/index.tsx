@@ -10,7 +10,15 @@ import {
   startOfWeek,
 } from 'date-fns';
 import { router } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ElementRef,
+  type ReactNode,
+} from 'react';
 import {
   Animated,
   AppState,
@@ -120,6 +128,7 @@ type TodayGridMetrics = {
 const GRID_GAP = spacing.md;
 const GRID_HORIZONTAL_PADDING = 0;
 const SCREEN_HORIZONTAL_PADDING = 20;
+const LAYOUT_DRAG_HOLD_DELAY_MS = 200;
 
 const LAYOUT_SIZE_OPTIONS: {
   label: string;
@@ -169,6 +178,9 @@ export default function TodayScreen() {
   const [layoutEditMode, setLayoutEditMode] = useState(false);
   const [layoutSizeHabitId, setLayoutSizeHabitId] = useState<string | null>(null);
   const [savingLayoutHabitId, setSavingLayoutHabitId] = useState<string | null>(null);
+  const [layoutDraggingHabitId, setLayoutDraggingHabitId] = useState<string | null>(null);
+  const layoutDropPreviewRefs = useRef(new Map<string, ElementRef<typeof View>>());
+  const layoutDropPreviewHabitIdRef = useRef<string | null>(null);
   const [datePickerMonth, setDatePickerMonth] = useState(() =>
     format(startOfMonth(parseISO(getTodayDateString())), 'yyyy-MM-dd')
   );
@@ -365,16 +377,6 @@ export default function TodayScreen() {
     () => habits.find((habit) => habit.id === layoutSizeHabitId) ?? null,
     [habits, layoutSizeHabitId]
   );
-  const layoutSizeHabitOrderIndex = useMemo(() => {
-    if (!layoutSizeHabit) {
-      return -1;
-    }
-
-    return orderedScheduledHabits.findIndex((habit) => habit.id === layoutSizeHabit.id);
-  }, [layoutSizeHabit, orderedScheduledHabits]);
-  const canMoveLayoutHabitEarlier = layoutSizeHabitOrderIndex > 0;
-  const canMoveLayoutHabitLater =
-    layoutSizeHabitOrderIndex >= 0 && layoutSizeHabitOrderIndex < orderedScheduledHabits.length - 1;
   const editorCompletedSubtaskIds = useMemo(
     () => new Set(editorSubtaskCompletions.map((completion) => completion.subtaskId)),
     [editorSubtaskCompletions]
@@ -820,33 +822,116 @@ export default function TodayScreen() {
     }
   }
 
-  async function moveLayoutHabit(direction: 'up' | 'down') {
-    if (!layoutSizeHabit || layoutSizeHabitOrderIndex === -1) {
+  function setLayoutDropPreviewRef(habitId: string, ref: ElementRef<typeof View> | null) {
+    if (ref) {
+      layoutDropPreviewRefs.current.set(habitId, ref);
       return;
     }
 
-    const targetIndex =
-      direction === 'up' ? layoutSizeHabitOrderIndex - 1 : layoutSizeHabitOrderIndex + 1;
+    layoutDropPreviewRefs.current.delete(habitId);
+  }
 
-    if (targetIndex < 0 || targetIndex >= orderedScheduledHabits.length) {
+  function setLayoutDropPreview(habitId: string | null) {
+    const currentHabitId = layoutDropPreviewHabitIdRef.current;
+
+    if (currentHabitId === habitId) {
       return;
     }
 
-    const reorderedHabits = [...orderedScheduledHabits];
-    const selectedHabit = reorderedHabits[layoutSizeHabitOrderIndex];
-    reorderedHabits[layoutSizeHabitOrderIndex] = reorderedHabits[targetIndex];
-    reorderedHabits[targetIndex] = selectedHabit;
+    if (currentHabitId) {
+      layoutDropPreviewRefs.current.get(currentHabitId)?.setNativeProps({
+        style: { opacity: 0 },
+      });
+    }
 
-    const nextOrders = reorderedHabits.map((habit, index) => ({
+    if (habitId) {
+      layoutDropPreviewRefs.current.get(habitId)?.setNativeProps({
+        style: { opacity: 1 },
+      });
+    }
+
+    layoutDropPreviewHabitIdRef.current = habitId;
+  }
+
+  function handleLayoutDragStart(habitId: string) {
+    setLayoutDraggingHabitId(habitId);
+    setLayoutDropPreview(null);
+    setLayoutSizeHabitId(null);
+  }
+
+  function handleLayoutDragMove(habitId: string, dx: number, dy: number) {
+    const dropTarget = getLayoutDragDropTarget(
+      habitId,
+      dx,
+      dy,
+      todayGridLayout,
+      todayGridMetrics,
+      orderedScheduledHabits
+    );
+
+    setLayoutDropPreview(dropTarget?.targetHabitId ?? null);
+  }
+
+  function handleLayoutDragCancel() {
+    setLayoutDraggingHabitId(null);
+    setLayoutDropPreview(null);
+  }
+
+  async function handleLayoutDragEnd(habitId: string, dx: number, dy: number) {
+    const dropTarget = getLayoutDragDropTarget(
+      habitId,
+      dx,
+      dy,
+      todayGridLayout,
+      todayGridMetrics,
+      orderedScheduledHabits
+    );
+
+    setLayoutDraggingHabitId(null);
+    setLayoutDropPreview(null);
+
+    if (!dropTarget) {
+      return;
+    }
+
+    const sourceIndex = orderedScheduledHabits.findIndex((habit) => habit.id === habitId);
+
+    if (sourceIndex === -1 || sourceIndex === dropTarget.dropIndex) {
+      return;
+    }
+
+    const reorderedScheduledHabits = reorderHabitList(
+      orderedScheduledHabits,
+      sourceIndex,
+      dropTarget.dropIndex
+    );
+
+    await saveLayoutHabitOrder(habitId, reorderedScheduledHabits);
+  }
+
+  async function saveLayoutHabitOrder(draggedHabitId: string, reorderedScheduledHabits: Habit[]) {
+    const scheduledHabitIds = new Set(reorderedScheduledHabits.map((habit) => habit.id));
+    let scheduledIndex = 0;
+    const reorderedActiveHabits = getLayoutSortedHabits(habits).map((habit) => {
+      if (!scheduledHabitIds.has(habit.id)) {
+        return habit;
+      }
+
+      const nextHabit = reorderedScheduledHabits[scheduledIndex];
+      scheduledIndex += 1;
+
+      return nextHabit;
+    });
+    const nextOrders = reorderedActiveHabits.map((habit, index) => ({
       habitId: habit.id,
-      order: (index + 1) * 10,
+      order: index,
     }));
     const orderByHabitId = new Map(nextOrders.map((item) => [item.habitId, item.order]));
+    const previousHabits = habits;
 
     try {
-      setSavingLayoutHabitId(layoutSizeHabit.id);
+      setSavingLayoutHabitId(draggedHabitId);
       setErrorMessage(null);
-      await updateHabitLayoutOrder(nextOrders);
       setHabits((current) =>
         current.map((habit) => {
           const nextOrder = orderByHabitId.get(habit.id);
@@ -854,9 +939,11 @@ export default function TodayScreen() {
           return nextOrder === undefined ? habit : { ...habit, todayLayoutOrder: nextOrder };
         })
       );
+      await updateHabitLayoutOrder(nextOrders);
     } catch (error) {
       console.error('Failed to update Today layout order', error);
-      setErrorMessage('Could not move that card. Please try again.');
+      setHabits(previousHabits);
+      setErrorMessage('Could not reorder that card. Please try again.');
     } finally {
       setSavingLayoutHabitId(null);
     }
@@ -922,6 +1009,7 @@ export default function TodayScreen() {
     <Screen
       contentContainerStyle={styles.screenContent}
       onScroll={handleTodayScroll}
+      scrollEnabled={layoutDraggingHabitId === null}
       scrollEventThrottle={16}
       scrollRef={todayScrollRef}>
       <View style={styles.buildDayCard}>
@@ -1038,7 +1126,9 @@ export default function TodayScreen() {
       {layoutEditMode ? (
         <View style={styles.layoutEditBanner}>
           <Text style={styles.layoutEditTitle}>Layout edit mode</Text>
-          <Text style={styles.layoutEditText}>Choose card sizes and move the boxes around.</Text>
+          <Text style={styles.layoutEditText}>
+            Drag cards to reorder. Tap a card to change its size.
+          </Text>
         </View>
       ) : null}
 
@@ -1083,8 +1173,26 @@ export default function TodayScreen() {
                   left: placement.column * (todayGridMetrics.cellSize + todayGridMetrics.gap),
                   top: placement.row * (todayGridMetrics.cellSize + todayGridMetrics.gap),
                 },
+                layoutDraggingHabitId === placement.item.habit.id && styles.draggingGridItem,
               ]}>
-              {renderTodayHabitCard(placement.item.habit, placement.item.variant)}
+              <DraggableHabitCard
+                disabled={Boolean(savingLayoutHabitId)}
+                dragging={layoutDraggingHabitId === placement.item.habit.id}
+                enabled={layoutEditMode}
+                onDragCancel={handleLayoutDragCancel}
+                onDragEnd={(dx, dy) => handleLayoutDragEnd(placement.item.habit.id, dx, dy)}
+                onDragMove={(dx, dy) => handleLayoutDragMove(placement.item.habit.id, dx, dy)}
+                onDragStart={() => handleLayoutDragStart(placement.item.habit.id)}>
+                {renderTodayHabitCard(placement.item.habit, placement.item.variant)}
+              </DraggableHabitCard>
+              <View
+                pointerEvents="none"
+                ref={(ref) => setLayoutDropPreviewRef(placement.item.habit.id, ref)}
+                style={[
+                  styles.layoutDropPreview,
+                  getHabitCardGeometryStyle(placement.item.variant, todayGridMetrics),
+                ]}
+              />
             </View>
           ))}
         </View>
@@ -1229,75 +1337,7 @@ export default function TodayScreen() {
                 <View style={styles.modalHeader}>
                   <Text style={styles.modalEyebrow}>Card size</Text>
                   <Text style={styles.modalTitle}>{layoutSizeHabit.name}</Text>
-                  <Text style={styles.modalText}>Move this card or choose how it appears on Today.</Text>
-                </View>
-
-                <View style={styles.layoutMoveRow}>
-                  <Pressable
-                    accessibilityLabel={`Move ${layoutSizeHabit.name} earlier`}
-                    accessibilityRole="button"
-                    accessibilityState={{
-                      disabled: Boolean(savingLayoutHabitId) || !canMoveLayoutHabitEarlier,
-                    }}
-                    disabled={Boolean(savingLayoutHabitId) || !canMoveLayoutHabitEarlier}
-                    onPress={() => moveLayoutHabit('up')}
-                    style={({ pressed }) => [
-                      styles.layoutMoveButton,
-                      (savingLayoutHabitId || !canMoveLayoutHabitEarlier) &&
-                        styles.disabledLayoutMoveButton,
-                      pressed && styles.pressed,
-                    ]}>
-                    <Ionicons
-                      color={
-                        canMoveLayoutHabitEarlier && !savingLayoutHabitId
-                          ? colors.text
-                          : colors.textSubtle
-                      }
-                      name="chevron-up"
-                      size={16}
-                    />
-                    <Text
-                      style={[
-                        styles.layoutMoveButtonText,
-                        (savingLayoutHabitId || !canMoveLayoutHabitEarlier) &&
-                          styles.disabledLayoutMoveButtonText,
-                      ]}>
-                      Move earlier
-                    </Text>
-                  </Pressable>
-
-                  <Pressable
-                    accessibilityLabel={`Move ${layoutSizeHabit.name} later`}
-                    accessibilityRole="button"
-                    accessibilityState={{
-                      disabled: Boolean(savingLayoutHabitId) || !canMoveLayoutHabitLater,
-                    }}
-                    disabled={Boolean(savingLayoutHabitId) || !canMoveLayoutHabitLater}
-                    onPress={() => moveLayoutHabit('down')}
-                    style={({ pressed }) => [
-                      styles.layoutMoveButton,
-                      (savingLayoutHabitId || !canMoveLayoutHabitLater) &&
-                        styles.disabledLayoutMoveButton,
-                      pressed && styles.pressed,
-                    ]}>
-                    <Ionicons
-                      color={
-                        canMoveLayoutHabitLater && !savingLayoutHabitId
-                          ? colors.text
-                          : colors.textSubtle
-                      }
-                      name="chevron-down"
-                      size={16}
-                    />
-                    <Text
-                      style={[
-                        styles.layoutMoveButtonText,
-                        (savingLayoutHabitId || !canMoveLayoutHabitLater) &&
-                          styles.disabledLayoutMoveButtonText,
-                      ]}>
-                      Move later
-                    </Text>
-                  </Pressable>
+                  <Text style={styles.modalText}>Choose how this card appears on Today.</Text>
                 </View>
 
                 <View style={styles.layoutSizeGrid}>
@@ -1586,6 +1626,153 @@ function AnimatedProgressBar({
         ]}
       />
     </View>
+  );
+}
+
+type DraggableHabitCardProps = {
+  children: ReactNode;
+  disabled: boolean;
+  dragging: boolean;
+  enabled: boolean;
+  onDragCancel: () => void;
+  onDragEnd: (dx: number, dy: number) => void;
+  onDragMove: (dx: number, dy: number) => void;
+  onDragStart: () => void;
+};
+
+function DraggableHabitCard({
+  children,
+  disabled,
+  dragging,
+  enabled,
+  onDragCancel,
+  onDragEnd,
+  onDragMove,
+  onDragStart,
+}: DraggableHabitCardProps) {
+  const pan = useRef(new Animated.ValueXY()).current;
+  const lift = useRef(new Animated.Value(0)).current;
+  const dragStartedRef = useRef(false);
+  const dragHoldReadyRef = useRef(false);
+  const [holdReady, setHoldReady] = useState(false);
+  const dragHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearDragHoldTimer = useCallback(() => {
+    if (dragHoldTimerRef.current) {
+      clearTimeout(dragHoldTimerRef.current);
+      dragHoldTimerRef.current = null;
+    }
+  }, []);
+  const resetDragHold = useCallback(() => {
+    clearDragHoldTimer();
+    dragHoldReadyRef.current = false;
+    setHoldReady(false);
+    Animated.spring(lift, {
+      toValue: 0,
+      friction: 7,
+      tension: 110,
+      useNativeDriver: true,
+    }).start();
+  }, [clearDragHoldTimer, lift]);
+  const resetPan = useCallback(() => {
+    Animated.spring(pan, {
+      toValue: { x: 0, y: 0 },
+      friction: 7,
+      tension: 90,
+      useNativeDriver: true,
+    }).start();
+  }, [pan]);
+
+  useEffect(() => resetDragHold, [resetDragHold]);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponderCapture: () => {
+          resetDragHold();
+
+          if (enabled && !disabled) {
+            dragHoldTimerRef.current = setTimeout(() => {
+              dragHoldReadyRef.current = true;
+              setHoldReady(true);
+              Animated.spring(lift, {
+                toValue: 1,
+                friction: 7,
+                tension: 120,
+                useNativeDriver: true,
+              }).start();
+            }, LAYOUT_DRAG_HOLD_DELAY_MS);
+          }
+
+          return false;
+        },
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          enabled &&
+          !disabled &&
+          dragHoldReadyRef.current &&
+          Math.abs(gestureState.dx) + Math.abs(gestureState.dy) > 8,
+        onPanResponderGrant: () => {
+          dragStartedRef.current = true;
+          clearDragHoldTimer();
+          pan.stopAnimation();
+          pan.setValue({ x: 0, y: 0 });
+          onDragStart();
+        },
+        onPanResponderMove: (_, gestureState) => {
+          pan.setValue({ x: gestureState.dx, y: gestureState.dy });
+          onDragMove(gestureState.dx, gestureState.dy);
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          dragStartedRef.current = false;
+          resetDragHold();
+          onDragEnd(gestureState.dx, gestureState.dy);
+          resetPan();
+        },
+        onPanResponderTerminate: () => {
+          dragStartedRef.current = false;
+          resetDragHold();
+          onDragCancel();
+          resetPan();
+        },
+        onPanResponderTerminationRequest: () => !dragStartedRef.current,
+      }),
+    [
+      clearDragHoldTimer,
+      disabled,
+      enabled,
+      lift,
+      onDragCancel,
+      onDragEnd,
+      onDragMove,
+      onDragStart,
+      pan,
+      resetDragHold,
+      resetPan,
+    ]
+  );
+  const scale = lift.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 1.07],
+  });
+
+  return (
+    <Animated.View
+      {...panResponder.panHandlers}
+      onTouchCancel={resetDragHold}
+      onTouchEnd={resetDragHold}
+      style={[
+        enabled && styles.draggableHabitCard,
+        dragging && styles.draggingHabitCard,
+        holdReady && styles.dragHoldReadyHabitCard,
+        {
+          transform: [
+            { translateX: pan.x },
+            { translateY: pan.y },
+            { scale },
+          ],
+        },
+      ]}>
+      {children}
+    </Animated.View>
   );
 }
 
@@ -2374,6 +2561,104 @@ function getTodayGridHeight(rowCount: number, metrics: TodayGridMetrics) {
   return rowCount * metrics.cellSize + (rowCount - 1) * metrics.gap;
 }
 
+function getLayoutDragDropTarget(
+  habitId: string,
+  dx: number,
+  dy: number,
+  layout: TodayGridLayout,
+  metrics: TodayGridMetrics,
+  orderedHabits: Habit[]
+): { targetHabitId: string; dropIndex: number } | null {
+  const sourceIndex = orderedHabits.findIndex((habit) => habit.id === habitId);
+  const draggedPlacement = layout.placements.find((placement) => placement.item.habit.id === habitId);
+
+  if (sourceIndex === -1 || !draggedPlacement || layout.placements.length < 2) {
+    return null;
+  }
+
+  const candidatePlacements = layout.placements.filter(
+    (placement) => placement.item.habit.id !== habitId
+  );
+  const anchorPoint = getMovedGridPlacementLeadingAnchor(draggedPlacement, metrics, dx, dy);
+  const targetPlacement = getGridPlacementAtPoint(anchorPoint, candidatePlacements, metrics);
+
+  if (!targetPlacement) {
+    return null;
+  }
+
+  const targetIndex = orderedHabits.findIndex(
+    (habit) => habit.id === targetPlacement.item.habit.id
+  );
+
+  if (targetIndex === -1 || targetIndex === sourceIndex) {
+    return null;
+  }
+
+  return {
+    targetHabitId: targetPlacement.item.habit.id,
+    dropIndex: targetIndex,
+  };
+}
+
+function getGridPlacementAtPoint(
+  point: { x: number; y: number },
+  placements: TodayGridPlacement[],
+  metrics: TodayGridMetrics
+) {
+  return placements.find((placement) => {
+    const bounds = getGridPlacementBounds(placement, metrics);
+
+    return (
+      point.x >= bounds.left &&
+      point.x <= bounds.right &&
+      point.y >= bounds.top &&
+      point.y <= bounds.bottom
+    );
+  });
+}
+
+function getGridPlacementBounds(
+  placement: TodayGridPlacement,
+  metrics: TodayGridMetrics
+): { bottom: number; left: number; right: number; top: number } {
+  const left = placement.column * (metrics.cellSize + metrics.gap);
+  const top = placement.row * (metrics.cellSize + metrics.gap);
+  const width = placement.colSpan === 2 ? metrics.fullWidth : metrics.cellSize;
+  const height =
+    placement.rowSpan === 2 ? metrics.cellSize * 2 + metrics.gap : metrics.cellSize;
+
+  return {
+    bottom: top + height,
+    left,
+    right: left + width,
+    top,
+  };
+}
+
+function getMovedGridPlacementLeadingAnchor(
+  placement: TodayGridPlacement,
+  metrics: TodayGridMetrics,
+  dx: number,
+  dy: number
+) {
+  const left = placement.column * (metrics.cellSize + metrics.gap);
+  const top = placement.row * (metrics.cellSize + metrics.gap);
+
+  return {
+    x: left + metrics.cellSize / 2 + dx,
+    y: top + dy,
+  };
+}
+
+function reorderHabitList(habits: Habit[], sourceIndex: number, dropIndex: number) {
+  const reorderedHabits = [...habits];
+  const [movedHabit] = reorderedHabits.splice(sourceIndex, 1);
+
+  reorderedHabits.splice(dropIndex, 0, movedHabit);
+
+  return reorderedHabits;
+}
+
 function getHabitCardVariant(habit: Habit): HabitCardVariant {
   if (habit.todayLayoutSize !== 'auto') {
     return habit.todayLayoutSize;
@@ -2424,11 +2709,25 @@ function getLayoutSortedHabits(habits: Habit[]) {
     return habits;
   }
 
+  const zeroOrderHabitIds = habits
+    .filter((habit) => habit.todayLayoutOrder === 0)
+    .map((habit) => habit.id);
+  const firstZeroOrderHabitId = zeroOrderHabitIds[0] ?? null;
+  const getSortableOrder = (habit: Habit) => {
+    if (habit.todayLayoutOrder !== 0) {
+      return habit.todayLayoutOrder;
+    }
+
+    return zeroOrderHabitIds.length <= 1 || habit.id === firstZeroOrderHabitId
+      ? 0
+      : Number.MAX_SAFE_INTEGER;
+  };
+
   return habits
     .map((habit, index) => ({ habit, index }))
     .sort((first, second) => {
-      const firstOrder = first.habit.todayLayoutOrder || Number.MAX_SAFE_INTEGER;
-      const secondOrder = second.habit.todayLayoutOrder || Number.MAX_SAFE_INTEGER;
+      const firstOrder = getSortableOrder(first.habit);
+      const secondOrder = getSortableOrder(second.habit);
       const orderDifference = firstOrder - secondOrder;
 
       if (orderDifference !== 0) {
@@ -2928,6 +3227,31 @@ const styles = StyleSheet.create({
   },
   gridPlacedItem: {
     position: 'absolute',
+  },
+  draggingGridItem: {
+    zIndex: 3,
+    elevation: 8,
+  },
+  draggableHabitCard: {
+    zIndex: 1,
+  },
+  draggingHabitCard: {
+    opacity: 0.92,
+  },
+  dragHoldReadyHabitCard: {
+    zIndex: 4,
+    elevation: 10,
+  },
+  layoutDropPreview: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    zIndex: 2,
+    opacity: 0,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    borderRadius: radius.lg,
+    backgroundColor: 'rgba(182, 255, 59, 0.1)',
   },
   habitCard: {
     position: 'relative',
@@ -3447,34 +3771,6 @@ const styles = StyleSheet.create({
   },
   modalActions: {
     gap: spacing.md,
-  },
-  layoutMoveRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  layoutMoveButton: {
-    flex: 1,
-    minHeight: 48,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceElevated,
-  },
-  disabledLayoutMoveButton: {
-    opacity: 0.45,
-  },
-  layoutMoveButtonText: {
-    color: colors.text,
-    ...typography.caption,
-    fontWeight: '900',
-  },
-  disabledLayoutMoveButtonText: {
-    color: colors.textSubtle,
   },
   layoutSizeGrid: {
     gap: spacing.sm,

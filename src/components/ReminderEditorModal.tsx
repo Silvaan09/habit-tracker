@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { BottomSheetModal } from '@/src/components/BottomSheetModal';
 import { HabitIcon } from '@/src/components/HabitIcon';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { ReminderTimePicker } from '@/src/components/ReminderTimePicker';
+import { ThemedSwitch } from '@/src/components/ThemedSwitch';
 import { updateHabitReminder } from '@/src/db/habits';
 import {
   cancelHabitReminder,
@@ -107,7 +108,7 @@ export function ReminderEditorModal({
 
       if (!notificationId) {
         await refreshPermissionStatus();
-        setErrorMessage('Notifications are not enabled, so this reminder was not scheduled.');
+        setErrorMessage('Allow notifications to save this reminder.');
         return;
       }
 
@@ -148,7 +149,7 @@ export function ReminderEditorModal({
       {habit ? (
         <>
           <View style={styles.header}>
-            <Text style={styles.eyebrow}>Reminder</Text>
+            <Text style={styles.title}>Reminder</Text>
             <View style={styles.habitRow}>
               <HabitIcon
                 color={habit.color ?? colors.habitGreen}
@@ -159,8 +160,7 @@ export function ReminderEditorModal({
                 size={48}
               />
               <View style={styles.habitText}>
-                <Text style={styles.title}>{habit.name}</Text>
-                <Text style={styles.subtitle}>Edit only this reminder.</Text>
+                <Text style={styles.habitName}>{habit.name}</Text>
               </View>
             </View>
           </View>
@@ -168,14 +168,18 @@ export function ReminderEditorModal({
           {permissionStatus === 'granted' ? null : (
             <View style={styles.permissionCard}>
               <Text style={styles.permissionText}>
-                Notifications are {permissionStatus}, so reminders may not schedule.
+                {permissionStatus === 'denied'
+                  ? 'Notifications are blocked. Enable notifications in your phone settings to receive reminders.'
+                  : 'Notifications are off. Allow notifications to receive habit reminders.'}
               </Text>
-              <PrimaryButton
-                disabled={requesting}
-                onPress={requestPermission}
-                title={requesting ? 'Requesting...' : 'Request permission'}
-                variant="secondary"
-              />
+              {permissionStatus === 'denied' ? null : (
+                <PrimaryButton
+                  disabled={requesting}
+                  onPress={requestPermission}
+                  title={requesting ? 'Requesting...' : 'Allow notifications'}
+                  variant="secondary"
+                />
+              )}
             </View>
           )}
 
@@ -191,24 +195,29 @@ export function ReminderEditorModal({
               saving && styles.disabled,
             ]}>
             <View style={styles.toggleText}>
-              <Text style={styles.toggleTitle}>Reminder enabled</Text>
+              <Text style={styles.toggleTitle}>
+                {reminderEnabled ? 'Reminder on' : 'Reminder off'}
+              </Text>
               <Text style={styles.toggleMeta}>
                 {reminderEnabled ? 'Reminder is on.' : 'Reminder is off.'}
               </Text>
             </View>
-            <Switch
-              disabled={saving}
-              onValueChange={setReminderEnabled}
-              pointerEvents="none"
-              thumbColor={reminderEnabled ? colors.primary : colors.textMuted}
-              trackColor={{ false: colors.surfaceMuted, true: colors.primaryMuted }}
-              value={reminderEnabled}
-            />
+            <View style={styles.toggleControlRow}>
+              <Text style={styles.toggleState}>{reminderEnabled ? 'On' : 'Off'}</Text>
+              <ThemedSwitch
+                accessibilityLabel={reminderEnabled ? 'Disable reminder' : 'Enable reminder'}
+                disabled={saving}
+                onValueChange={setReminderEnabled}
+                value={reminderEnabled}
+              />
+            </View>
           </Pressable>
 
           {reminderEnabled ? (
             <ReminderTimePicker
               disabled={saving}
+              helper="Choose when this reminder appears."
+              label="Time"
               onChange={(value) => {
                 setReminderTime(value);
                 setErrorMessage(null);
@@ -220,7 +229,12 @@ export function ReminderEditorModal({
           {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
           <View style={styles.actions}>
-            <PrimaryButton disabled={saving} onPress={requestClose} title="Cancel" variant="secondary" />
+            <PrimaryButton
+              disabled={saving}
+              onPress={requestClose}
+              title="Cancel"
+              variant="secondary"
+            />
             <PrimaryButton
               disabled={saving}
               onPress={saveReminder}
@@ -263,6 +277,11 @@ const styles = StyleSheet.create({
     color: colors.text,
     ...typography.heading,
   },
+  habitName: {
+    color: colors.text,
+    ...typography.body,
+    fontWeight: '900',
+  },
   subtitle: {
     color: colors.textMuted,
     ...typography.caption,
@@ -285,6 +304,7 @@ const styles = StyleSheet.create({
     minHeight: 72,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: spacing.md,
     padding: spacing.lg,
     borderWidth: 1,
@@ -294,12 +314,26 @@ const styles = StyleSheet.create({
   },
   toggleText: {
     flex: 1,
+    justifyContent: 'center',
     gap: spacing.xs,
+  },
+  toggleControlRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
   },
   toggleTitle: {
     color: colors.text,
     ...typography.caption,
     fontWeight: '900',
+  },
+  toggleState: {
+    minWidth: 24,
+    color: colors.primary,
+    ...typography.caption,
+    fontWeight: '900',
+    textAlign: 'right',
   },
   toggleMeta: {
     color: colors.textMuted,

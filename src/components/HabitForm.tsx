@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { HabitIcon } from '@/src/components/HabitIcon';
 import {
@@ -11,6 +11,7 @@ import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { ReminderTimePicker } from '@/src/components/ReminderTimePicker';
 import { ScheduleDatePickerModal } from '@/src/components/ScheduleDatePickerModal';
 import { TextInputField } from '@/src/components/TextInputField';
+import { ThemedSwitch } from '@/src/components/ThemedSwitch';
 import { colors, radius, spacing, typography } from '@/src/theme';
 import type { HabitIconType, HabitScheduleType, HabitTrackingType } from '@/src/types/Habit';
 import { formatDisplayDateDDMMYYYY, getTodayDateString } from '@/src/utils/dates';
@@ -732,12 +733,10 @@ export function HabitForm({
           </View>
           <View style={styles.reminderControlRow}>
             <Text style={styles.reminderState}>{reminderEnabled ? 'On' : 'Off'}</Text>
-            <Switch
+            <ThemedSwitch
+              accessibilityLabel={`${reminderEnabled ? 'Disable' : 'Enable'} daily reminder`}
               disabled={saving}
               onValueChange={handleReminderSwitch}
-              pointerEvents="none"
-              thumbColor={reminderEnabled ? colors.primary : colors.textMuted}
-              trackColor={{ false: colors.surfaceMuted, true: colors.primaryMuted }}
               value={reminderEnabled}
             />
           </View>
@@ -1178,7 +1177,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.lg,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: colors.surfaceElevated,
   },
   reminderText: {
     flex: 1,

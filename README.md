@@ -61,10 +61,12 @@ Habits can be scheduled in multiple ways:
   - Done / skipped / remaining counts
   - Animated progress bar
 - **Compact habit box layout**
-- **Manual Today layout edit mode**
+- **Drag-and-drop Today layout edit mode**
   - Choose card sizes: auto, small, tall, wide, or large
-  - Move cards earlier or later without drag-and-drop
-  - Persist layout choices locally
+  - Hold a card briefly, then drag it over another card to reorder
+  - Preview the drop target while dragging
+  - Persist card sizes and ordering locally
+  - Keep completion, skip, numeric, and subtask actions disabled while editing layout
 - **Mini recent-history overview for each habit**
   - Shows recent scheduled occurrences
   - Distinguishes completed, skipped, and missed days
@@ -156,7 +158,7 @@ This project is currently in active development. The core habit tracking experie
 - Subtasks
 - Numeric goals
 - Inline Today progress updates
-- Manual Today layout editing
+- Drag-and-drop Today layout editing
 - Stats and heatmaps
 - Local reminders
 - Import/export/reset data management

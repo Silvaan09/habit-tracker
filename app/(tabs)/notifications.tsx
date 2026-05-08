@@ -82,8 +82,8 @@ export default function NotificationsScreen() {
       setPermissionStatus(await getNotificationPermissionStatus());
       setMessage(
         granted
-          ? 'Notifications are enabled for habit reminders.'
-          : 'Notifications are not enabled, so reminders cannot be scheduled.'
+          ? 'Notifications are on for habit reminders.'
+          : 'Notifications are still off.'
       );
     } catch (error) {
       console.error('Failed to request notification permission', error);
@@ -114,9 +114,8 @@ export default function NotificationsScreen() {
   return (
     <Screen contentContainerStyle={styles.content}>
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>Notifications</Text>
         <Text style={styles.title}>Reminders</Text>
-        <Text style={styles.subtitle}>Upcoming local habit reminders.</Text>
+        <Text style={styles.subtitle}>{"Manage the habit reminders you've set."}</Text>
       </View>
 
       {errorMessage ? (
@@ -136,40 +135,42 @@ export default function NotificationsScreen() {
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
             <View>
-              <Text style={styles.sectionEyebrow}>Permission</Text>
-              <Text style={styles.cardTitle}>Device notifications</Text>
+              <Text style={styles.cardTitle}>
+                {permissionStatus === 'denied'
+                  ? 'Notifications are blocked'
+                  : 'Notifications are off'}
+              </Text>
             </View>
             <View style={styles.statusPill}>
               <Text style={styles.statusValue}>{permissionStatus}</Text>
             </View>
           </View>
           <Text style={styles.bodyText}>
-            Enable notifications to receive scheduled habit reminders.
+            {permissionStatus === 'denied'
+              ? 'Enable notifications in your phone settings to receive reminders.'
+              : 'Allow notifications to receive habit reminders.'}
           </Text>
-          <View style={styles.actions}>
-            <PrimaryButton
-              disabled={requesting}
-              onPress={handleRequestPermission}
-              title={requesting ? 'Requesting...' : 'Request permission'}
-            />
-            <PrimaryButton
-              onPress={() => router.push('/settings')}
-              title="Open Settings"
-              variant="secondary"
-            />
-          </View>
+          {permissionStatus === 'denied' ? null : (
+            <View style={styles.actions}>
+              <PrimaryButton
+                disabled={requesting}
+                onPress={handleRequestPermission}
+                title={requesting ? 'Requesting...' : 'Allow notifications'}
+              />
+            </View>
+          )}
         </View>
       )}
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Upcoming reminders</Text>
+        <Text style={styles.sectionTitle}>Your reminders</Text>
         {reminderHabits.length === 0 ? (
           <View style={styles.emptyStack}>
             <EmptyState
               title="No reminders set"
-              message="Add a reminder to a habit to see it here."
+              message="Turn on reminders for a habit and they'll appear here."
             />
-            <PrimaryButton onPress={() => router.push('/habits/new')} title="New Habit" />
+            <PrimaryButton onPress={() => router.push('/habits/new')} title="Create habit" />
           </View>
         ) : (
           <View style={styles.reminderList}>
@@ -190,10 +191,7 @@ export default function NotificationsScreen() {
                 />
                 <View style={styles.reminderText}>
                   <Text style={styles.reminderName}>{habit.name}</Text>
-                  <Text style={styles.reminderMeta}>{getReminderScheduleSummary(habit)}</Text>
-                </View>
-                <View style={styles.timePill}>
-                  <Text style={styles.timeText}>{habit.reminderTime}</Text>
+                  <Text style={styles.reminderMeta}>{getReminderMeta(habit)}</Text>
                 </View>
               </Pressable>
             ))}
@@ -210,24 +208,34 @@ export default function NotificationsScreen() {
   );
 }
 
-function getReminderScheduleSummary(habit: Habit) {
+function getReminderMeta(habit: Habit) {
   const time = habit.reminderTime ?? '--:--';
 
+  return `${time} · ${getReminderScheduleSummary(habit)}`;
+}
+
+function getReminderScheduleSummary(habit: Habit) {
   if (habit.scheduleType === 'weekdays') {
     const weekdays = habit.scheduleWeekdays ?? [];
 
     if (weekdays.length === 0) {
-      return `No specific days - ${time}`;
+      return 'Specific days';
     }
 
-    return `${weekdays.map(getWeekdayLabel).join(', ')} - ${time}`;
+    return weekdays.map(getWeekdayLabel).join(', ');
   }
 
   if (habit.scheduleType === 'cycle' || habit.scheduleType === 'interval') {
-    return `${habit.scheduleOnDays ?? 1} days on, ${habit.scheduleOffDays ?? 0} days off - ${time}`;
+    return `${formatDayCount(habit.scheduleOnDays ?? 1)} on, ${formatDayCount(
+      habit.scheduleOffDays ?? 0
+    )} off`;
   }
 
-  return `Daily - ${time}`;
+  return 'Daily';
+}
+
+function formatDayCount(dayCount: number) {
+  return `${dayCount} ${dayCount === 1 ? 'day' : 'days'}`;
 }
 
 function getWeekdayLabel(weekday: number) {

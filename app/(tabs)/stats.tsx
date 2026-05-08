@@ -325,14 +325,19 @@ export default function StatsScreen() {
               {habitBreakdown.map((item) => {
                 return (
                   <View key={item.habit.id} style={styles.habitRow}>
-                    <HabitIcon
-                      color={item.habit.color ?? colors.habitGreen}
-                      fallbackIcon={item.habit.icon}
-                      iconLibrary={item.habit.iconLibrary}
-                      iconType={item.habit.iconType}
-                      iconValue={item.habit.iconValue}
-                      size={42}
-                    />
+                    <View style={styles.habitIconWrap}>
+                      <HabitIcon
+                        color={item.habit.color ?? colors.habitGreen}
+                        fallbackIcon={item.habit.icon}
+                        iconLibrary={item.habit.iconLibrary}
+                        iconType={item.habit.iconType}
+                        iconValue={item.habit.iconValue}
+                        size={42}
+                      />
+                      <View style={styles.crownOverlay}>
+                        <HabitCrownBadge compact milestone={item.crownMilestone} />
+                      </View>
+                    </View>
                     <View style={styles.habitText}>
                       <Text style={styles.habitName}>{item.habit.name}</Text>
                       <Text style={styles.habitMeta}>
@@ -349,7 +354,6 @@ export default function StatsScreen() {
                       </View>
                     </View>
                     <View style={styles.habitRatePill}>
-                      <HabitCrownBadge compact milestone={item.crownMilestone} />
                       <Text style={styles.completionCount}>
                         {Math.round(item.completionRate * 100)}%
                       </Text>
@@ -691,6 +695,14 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radius.xl,
     backgroundColor: colors.surface,
+  },
+  habitIconWrap: {
+    position: 'relative',
+  },
+  crownOverlay: {
+    position: 'absolute',
+    right: -8,
+    bottom: -8,
   },
   habitText: {
     flex: 1,
