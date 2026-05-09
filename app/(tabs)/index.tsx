@@ -24,11 +24,11 @@ import {
   AppState,
   DeviceEventEmitter,
   GestureResponderEvent,
+  Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
   PanResponder,
   Pressable,
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -37,6 +37,7 @@ import {
   View,
   type ViewStyle,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
 
 import { EmptyState } from '@/src/components/EmptyState';
@@ -44,8 +45,10 @@ import { BottomSheetModal } from '@/src/components/BottomSheetModal';
 import { HabitCrownBadge } from '@/src/components/HabitCrownBadge';
 import { HabitHistoryMiniRow } from '@/src/components/HabitHistoryMiniRow';
 import { HabitIcon } from '@/src/components/HabitIcon';
+import { LucideCrown } from '@/src/components/lucideHabitIcons';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { Screen } from '@/src/components/Screen';
+import { UnsavedChangesModal } from '@/src/components/UnsavedChangesModal';
 import {
   completeHabitForDate,
   getCompletionsForHabit,
@@ -55,6 +58,7 @@ import {
 import { initDatabase } from '@/src/db/database';
 import { getActiveHabits, updateHabitLayout, updateHabitLayoutOrder } from '@/src/db/habits';
 import { getNumericEntryForDate, setNumericEntryForDate } from '@/src/db/numericEntries';
+import { getSettingValue, setSettingValue } from '@/src/db/settings';
 import {
   getSkipsForDate,
   getSkipsForDateRange,
@@ -87,6 +91,7 @@ import { getScheduledHabitsForDate } from '@/src/utils/schedule';
 import {
   calculateScheduleAwareCurrentStreak,
   getHabitCrownMilestone,
+  type HabitCrownTier,
   type HabitCrownMilestone,
 } from '@/src/utils/milestones';
 import {
@@ -100,6 +105,13 @@ type HabitProgress = {
 };
 
 type HabitCardVariant = 'small' | 'tall' | 'wide' | 'large';
+
+type CrownToastState = {
+  id: string;
+  title: string;
+  body: string;
+  tier: HabitCrownTier;
+};
 
 type TodayGridItem = {
   habit: Habit;
@@ -129,6 +141,15 @@ const GRID_GAP = spacing.md;
 const GRID_HORIZONTAL_PADDING = 0;
 const SCREEN_HORIZONTAL_PADDING = 20;
 const LAYOUT_DRAG_HOLD_DELAY_MS = 200;
+const CROWN_TOAST_TOP_GAP = 0;
+const CROWN_EARNED_SETTING_PREFIX = 'crown-earned';
+const CROWN_TIER_RANK: Record<HabitCrownTier, number> = {
+  none: 0,
+  bronze: 1,
+  silver: 2,
+  gold: 3,
+  diamond: 4,
+};
 
 const LAYOUT_SIZE_OPTIONS: {
   label: string;
@@ -146,6 +167,7 @@ const WEEKLY_SKIP_LIMIT = 1;
 
 export default function TodayScreen() {
   const { width: windowWidth } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [habits, setHabits] = useState<Habit[]>([]);
   const [completions, setCompletions] = useState<HabitCompletion[]>([]);
   const [skips, setSkips] = useState<HabitSkip[]>([]);
@@ -188,9 +210,13 @@ export default function TodayScreen() {
   const [editorSubtaskCompletions, setEditorSubtaskCompletions] = useState<
     HabitSubtaskCompletion[]
   >([]);
+  const editorSubtaskCompletionsRef = useRef<HabitSubtaskCompletion[]>([]);
+  const [savingSubtaskIds, setSavingSubtaskIds] = useState<Record<string, boolean>>({});
   const [editorNumericValue, setEditorNumericValue] = useState('');
   const [editorInitialNumericValue, setEditorInitialNumericValue] = useState('');
+  const [numericClosePromptVisible, setNumericClosePromptVisible] = useState(false);
   const [savingProgress, setSavingProgress] = useState(false);
+  const [crownToast, setCrownToast] = useState<CrownToastState | null>(null);
 
   const loadTodayData = useCallback(async (dateToLoad: string) => {
     const currentToday = getTodayDateString();
@@ -444,6 +470,18 @@ export default function TodayScreen() {
   }, [syncActualTodayDate]);
 
   useEffect(() => {
+    if (!crownToast) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setCrownToast(null);
+    }, 2800);
+
+    return () => clearTimeout(timeoutId);
+  }, [crownToast]);
+
+  useEffect(() => {
     const subscription = DeviceEventEmitter.addListener(TODAY_TAB_RESELECT_EVENT, () => {
       const today = getTodayDateString();
 
@@ -491,7 +529,10 @@ export default function TodayScreen() {
     [shiftWeek]
   );
 
-  async function refreshSelectedDateStatuses() {
+  async function refreshSelectedDateStatuses(options?: {
+    crownToastHabit?: Habit;
+    previousCrownMilestone?: HabitCrownMilestone;
+  }) {
     const weekStart = getWeekStartDateString(selectedDate);
     const weekEnd = format(addDays(parseISO(weekStart), 6), 'yyyy-MM-dd');
     const [dateCompletions, dateSkips, weekSkips] = await Promise.all([
@@ -503,13 +544,25 @@ export default function TodayScreen() {
     setCompletions(dateCompletions);
     setSkips(dateSkips);
     setWeeklySkips(weekSkips);
-    setProgressByHabitId(await getProgressByHabitId(habits, selectedDate));
+    const nextProgressByHabitId = await getProgressByHabitId(habits, selectedDate);
     const currentToday = getTodayDateString();
-
-    setCrownByHabitId(await getCrownMilestonesByHabitId(habits, currentToday));
-    setHistoryByHabitId(
-      await getRecentHistoryByHabitId(habits, getHistoryEndDate(selectedDate, currentToday))
+    const nextCrownByHabitId = await getCrownMilestonesByHabitId(habits, currentToday);
+    const nextHistoryByHabitId = await getRecentHistoryByHabitId(
+      habits,
+      getHistoryEndDate(selectedDate, currentToday)
     );
+
+    setProgressByHabitId(nextProgressByHabitId);
+    setCrownByHabitId(nextCrownByHabitId);
+    setHistoryByHabitId(nextHistoryByHabitId);
+
+    if (options?.crownToastHabit && options.previousCrownMilestone) {
+      await maybeShowNewCrownToast(
+        options.crownToastHabit,
+        options.previousCrownMilestone,
+        nextCrownByHabitId[options.crownToastHabit.id] ?? getHabitCrownMilestone(0)
+      );
+    }
   }
 
   function openDatePicker() {
@@ -537,17 +590,23 @@ export default function TodayScreen() {
       return;
     }
 
+    const habit = habits.find((item) => item.id === habitId);
+    const wasCompleted = completedHabitIds.has(habitId);
+    const previousCrownMilestone = crownByHabitId[habitId] ?? getHabitCrownMilestone(0);
+
     try {
       setErrorMessage(null);
       setBusyHabitIds((current) => ({ ...current, [habitId]: true }));
 
-      if (completedHabitIds.has(habitId)) {
+      if (wasCompleted) {
         await uncompleteHabitForDate(habitId, selectedDate);
       } else {
         await completeHabitForDate(habitId, selectedDate);
       }
 
-      await refreshSelectedDateStatuses();
+      await refreshSelectedDateStatuses(
+        habit && !wasCompleted ? { crownToastHabit: habit, previousCrownMilestone } : undefined
+      );
     } catch (error) {
       console.error('Failed to toggle habit completion', error);
       setErrorMessage('Could not update that habit. Please try again.');
@@ -661,6 +720,7 @@ export default function TodayScreen() {
 
         setEditorSubtasks(subtasks);
         setEditorSubtaskCompletions(subtaskCompletions);
+        editorSubtaskCompletionsRef.current = subtaskCompletions;
         setEditorNumericValue('');
       }
 
@@ -670,6 +730,7 @@ export default function TodayScreen() {
 
         setEditorSubtasks([]);
         setEditorSubtaskCompletions([]);
+        editorSubtaskCompletionsRef.current = [];
         setEditorNumericValue(nextValue);
         setEditorInitialNumericValue(nextValue);
       }
@@ -686,11 +747,22 @@ export default function TodayScreen() {
     setProgressEditorError(null);
     setEditorSubtasks([]);
     setEditorSubtaskCompletions([]);
+    editorSubtaskCompletionsRef.current = [];
+    setSavingSubtaskIds({});
     setEditorNumericValue('');
     setEditorInitialNumericValue('');
+    setNumericClosePromptVisible(false);
   }
 
-  function closeProgressEditor() {
+  function discardProgressEditor() {
+    if (savingProgress) {
+      return;
+    }
+
+    dismissProgressEditor();
+  }
+
+  function requestProgressEditorBackdropClose() {
     if (savingProgress) {
       return;
     }
@@ -699,11 +771,7 @@ export default function TodayScreen() {
       progressEditorHabit?.trackingType === 'numeric' &&
       normalizeNumericDraft(editorNumericValue) !== normalizeNumericDraft(editorInitialNumericValue)
     ) {
-      Alert.alert('Save changes?', 'You have unsaved progress changes.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Discard', style: 'destructive', onPress: dismissProgressEditor },
-        { text: 'Save', onPress: () => void saveEditorNumericProgress() },
-      ]);
+      setNumericClosePromptVisible(true);
       return;
     }
 
@@ -715,31 +783,77 @@ export default function TodayScreen() {
       return;
     }
 
-    try {
-      setSavingProgress(true);
-      setProgressEditorError(null);
-      setBusyHabitIds((current) => ({ ...current, [progressEditorHabit.id]: true }));
+    if (savingSubtaskIds[subtask.id]) {
+      return;
+    }
 
-      if (editorCompletedSubtaskIds.has(subtask.id)) {
+    const habit = progressEditorHabit;
+    const previousCompletions = editorSubtaskCompletionsRef.current;
+    const previousCrownMilestone = crownByHabitId[habit.id] ?? getHabitCrownMilestone(0);
+    const wasChecked = previousCompletions.some((completion) => completion.subtaskId === subtask.id);
+    const nextCompletions = wasChecked
+      ? previousCompletions.filter((completion) => completion.subtaskId !== subtask.id)
+      : [
+          ...previousCompletions,
+          {
+            completedAt: new Date().toISOString(),
+            date: selectedDate,
+            habitId: habit.id,
+            id: `optimistic_${subtask.id}_${Date.now()}`,
+            subtaskId: subtask.id,
+          },
+        ];
+
+    editorSubtaskCompletionsRef.current = nextCompletions;
+    setEditorSubtaskCompletions(nextCompletions);
+    setProgressByHabitId((current) => ({
+      ...current,
+      [habit.id]: getSubtaskProgress(editorSubtasks, nextCompletions),
+    }));
+    setCompletions((current) =>
+      syncOptimisticCompletionForHabit(
+        current,
+        habit.id,
+        selectedDate,
+        areRequiredSubtasksComplete(editorSubtasks, nextCompletions)
+      )
+    );
+
+    try {
+      setSavingSubtaskIds((current) => ({ ...current, [subtask.id]: true }));
+      setProgressEditorError(null);
+
+      if (wasChecked) {
         await uncompleteSubtaskForDate(subtask.id, selectedDate);
       } else {
-        await completeSubtaskForDate(subtask.id, progressEditorHabit.id, selectedDate);
+        await completeSubtaskForDate(subtask.id, habit.id, selectedDate);
       }
 
-      const nextCompletions = await getSubtaskCompletionsForHabitDate(
-        progressEditorHabit.id,
-        selectedDate
-      );
-      setEditorSubtaskCompletions(nextCompletions);
-      await refreshSelectedDateStatuses();
+      void refreshSelectedDateStatuses({
+        crownToastHabit: habit,
+        previousCrownMilestone,
+      }).catch((error) => {
+        console.error('Failed to silently refresh Today after subtask update', error);
+      });
     } catch (error) {
       console.error('Failed to update subtask from Today', error);
+      editorSubtaskCompletionsRef.current = previousCompletions;
+      setEditorSubtaskCompletions(previousCompletions);
+      setProgressByHabitId((current) => ({
+        ...current,
+        [habit.id]: getSubtaskProgress(editorSubtasks, previousCompletions),
+      }));
+      setCompletions((current) =>
+        syncOptimisticCompletionForHabit(
+          current,
+          habit.id,
+          selectedDate,
+          areRequiredSubtasksComplete(editorSubtasks, previousCompletions)
+        )
+      );
       setProgressEditorError('Could not update that subtask.');
     } finally {
-      if (progressEditorHabit) {
-        setBusyHabitIds((current) => ({ ...current, [progressEditorHabit.id]: false }));
-      }
-      setSavingProgress(false);
+      setSavingSubtaskIds((current) => ({ ...current, [subtask.id]: false }));
     }
   }
 
@@ -748,6 +862,7 @@ export default function TodayScreen() {
       return;
     }
 
+    const habit = progressEditorHabit;
     const parsedValue = Number(nextValue.replace(',', '.'));
 
     if (!Number.isFinite(parsedValue) || parsedValue < 0) {
@@ -755,20 +870,36 @@ export default function TodayScreen() {
       return;
     }
 
+    const previousCrownMilestone = crownByHabitId[habit.id] ?? getHabitCrownMilestone(0);
+
     try {
       setSavingProgress(true);
       setProgressEditorError(null);
-      setBusyHabitIds((current) => ({ ...current, [progressEditorHabit.id]: true }));
-      await setNumericEntryForDate(progressEditorHabit.id, selectedDate, parsedValue);
-      await refreshSelectedDateStatuses();
+      await setNumericEntryForDate(habit.id, selectedDate, parsedValue);
+      setProgressByHabitId((current) => ({
+        ...current,
+        [habit.id]: getNumericProgress(habit, parsedValue),
+      }));
+      setCompletions((current) =>
+        syncOptimisticCompletionForHabit(
+          current,
+          habit.id,
+          selectedDate,
+          isNumericGoalComplete(habit, parsedValue)
+        )
+      );
+      setNumericClosePromptVisible(false);
       dismissProgressEditor();
+      void refreshSelectedDateStatuses({
+        crownToastHabit: habit,
+        previousCrownMilestone,
+      }).catch((error) => {
+        console.error('Failed to silently refresh Today after numeric update', error);
+      });
     } catch (error) {
       console.error('Failed to update numeric progress from Today', error);
       setProgressEditorError('Could not save progress.');
     } finally {
-      if (progressEditorHabit) {
-        setBusyHabitIds((current) => ({ ...current, [progressEditorHabit.id]: false }));
-      }
       setSavingProgress(false);
     }
   }
@@ -962,6 +1093,33 @@ export default function TodayScreen() {
     }
   }
 
+  async function maybeShowNewCrownToast(
+    habit: Habit,
+    previousMilestone: HabitCrownMilestone,
+    nextMilestone: HabitCrownMilestone
+  ) {
+    if (
+      nextMilestone.tier === 'none' ||
+      CROWN_TIER_RANK[nextMilestone.tier] <= CROWN_TIER_RANK[previousMilestone.tier]
+    ) {
+      return;
+    }
+
+    const settingKey = `${CROWN_EARNED_SETTING_PREFIX}:${habit.id}:${nextMilestone.tier}`;
+
+    if ((await getSettingValue(settingKey)) === '1') {
+      return;
+    }
+
+    await setSettingValue(settingKey, '1');
+    setCrownToast({
+      body: `${nextMilestone.label} unlocked for ${habit.name}.`,
+      id: `${habit.id}:${nextMilestone.tier}:${Date.now()}`,
+      tier: nextMilestone.tier,
+      title: 'New crown earned',
+    });
+  }
+
   function renderTodayHabitCard(habit: Habit, variant: HabitCardVariant) {
     const progress = progressByHabitId[habit.id];
     const completed = completedHabitIds.has(habit.id);
@@ -1006,12 +1164,13 @@ export default function TodayScreen() {
   }
 
   return (
-    <Screen
-      contentContainerStyle={styles.screenContent}
-      onScroll={handleTodayScroll}
-      scrollEnabled={layoutDraggingHabitId === null}
-      scrollEventThrottle={16}
-      scrollRef={todayScrollRef}>
+    <View style={styles.root}>
+      <Screen
+        contentContainerStyle={styles.screenContent}
+        onScroll={handleTodayScroll}
+        scrollEnabled={layoutDraggingHabitId === null}
+        scrollEventThrottle={16}
+        scrollRef={todayScrollRef}>
       <View style={styles.buildDayCard}>
         <View style={styles.buildDayHeader}>
           <View style={styles.buildDayCopy}>
@@ -1199,7 +1358,7 @@ export default function TodayScreen() {
       )}
 
       <BottomSheetModal
-        onRequestClose={closeProgressEditor}
+        onRequestClose={requestProgressEditorBackdropClose}
         sheetStyle={styles.modalCard}
         visible={Boolean(progressEditorHabit)}>
         {progressEditorHabit ? (
@@ -1225,14 +1384,13 @@ export default function TodayScreen() {
                             accessibilityLabel={`${checked ? 'Uncheck' : 'Check'} ${subtask.title}`}
                             accessibilityRole="checkbox"
                             accessibilityState={{ checked }}
-                            disabled={savingProgress}
+                            disabled={Boolean(savingSubtaskIds[subtask.id])}
                             key={subtask.id}
                             onPress={() => toggleEditorSubtask(subtask)}
                             style={({ pressed }) => [
                               styles.editorChecklistRow,
                               checked && styles.checkedEditorChecklistRow,
                               pressed && styles.pressed,
-                              savingProgress && styles.controlDisabled,
                             ]}>
                             <View
                               style={[
@@ -1305,16 +1463,15 @@ export default function TodayScreen() {
 
                 {progressEditorHabit.trackingType === 'subtasks' ? (
                   <PrimaryButton
-                    disabled={savingProgress}
-                    onPress={closeProgressEditor}
+                    onPress={discardProgressEditor}
                     title="Close"
                   />
                 ) : (
                   <View style={styles.modalActions}>
                     <PrimaryButton
                       disabled={savingProgress}
-                      onPress={closeProgressEditor}
-                      title="Cancel"
+                      onPress={discardProgressEditor}
+                      title="Close"
                       variant="secondary"
                     />
                     <PrimaryButton
@@ -1327,6 +1484,19 @@ export default function TodayScreen() {
           </View>
         ) : null}
       </BottomSheetModal>
+
+      <UnsavedChangesModal
+        message="You changed your progress. Save before closing?"
+        onCancel={() => setNumericClosePromptVisible(false)}
+        onDiscard={dismissProgressEditor}
+        onSave={() => {
+          setNumericClosePromptVisible(false);
+          void saveEditorNumericProgress();
+        }}
+        saving={savingProgress}
+        title="Save changes?"
+        visible={numericClosePromptVisible}
+      />
 
       <BottomSheetModal
         onRequestClose={closeLayoutSizeSelector}
@@ -1541,8 +1711,179 @@ export default function TodayScreen() {
             </View>
             <PrimaryButton onPress={() => setSkipLimitModalVisible(false)} title="Close" />
       </BottomSheetModal>
-    </Screen>
+      </Screen>
+      <CrownMilestoneToast
+        onDismiss={() => setCrownToast(null)}
+        topOffset={insets.top + CROWN_TOAST_TOP_GAP}
+        toast={crownToast}
+      />
+    </View>
   );
+}
+
+function CrownMilestoneToast({
+  onDismiss,
+  topOffset,
+  toast,
+}: {
+  onDismiss: () => void;
+  topOffset: number;
+  toast: CrownToastState | null;
+}) {
+  const visible = Boolean(toast);
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(-10)).current;
+
+  useEffect(() => {
+    if (!visible) {
+      opacity.setValue(0);
+      translateY.setValue(-10);
+      return;
+    }
+
+    Animated.parallel([
+      Animated.timing(opacity, {
+        duration: 180,
+        easing: EasingLikeOutCubic,
+        toValue: 1,
+        useNativeDriver: true,
+      }),
+      Animated.timing(translateY, {
+        duration: 180,
+        easing: EasingLikeOutCubic,
+        toValue: 0,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [opacity, translateY, visible]);
+
+  if (!toast) {
+    return null;
+  }
+
+  const crownColor = getCrownToastColor(toast.tier);
+
+  return (
+    <Modal animationType="none" transparent visible={visible}>
+      <Animated.View
+        pointerEvents="box-none"
+        style={[
+          styles.crownToastWrap,
+          {
+            opacity,
+            paddingTop: topOffset,
+            transform: [{ translateY }],
+          },
+        ]}>
+        <Pressable
+          accessibilityLabel="Dismiss crown notification"
+          accessibilityRole="button"
+          onPress={onDismiss}
+          style={({ pressed }) => [styles.crownToast, pressed && styles.pressed]}>
+          <View style={[styles.crownToastIcon, { borderColor: crownColor }]}>
+            <LucideCrown color={crownColor} size={22} strokeWidth={2.8} />
+          </View>
+          <View style={styles.crownToastCopy}>
+            <Text style={styles.crownToastTitle}>{toast.title}</Text>
+            <Text style={styles.crownToastBody}>{toast.body}</Text>
+          </View>
+        </Pressable>
+      </Animated.View>
+    </Modal>
+  );
+}
+
+const EasingLikeOutCubic = (value: number) => 1 - Math.pow(1 - value, 3);
+
+function syncOptimisticCompletionForHabit(
+  current: HabitCompletion[],
+  habitId: string,
+  date: string,
+  completed: boolean
+) {
+  const withoutHabit = current.filter(
+    (completion) => !(completion.habitId === habitId && completion.date === date)
+  );
+
+  if (!completed) {
+    return withoutHabit;
+  }
+
+  return [
+    ...withoutHabit,
+    {
+      completedAt: new Date().toISOString(),
+      date,
+      habitId,
+      id: `optimistic_completion_${habitId}_${date}`,
+    },
+  ];
+}
+
+function getNumericProgress(habit: Habit, value: number): HabitProgress {
+  const targetValue = habit.targetValue ?? 0;
+  const unit = habit.targetUnit ? ` ${habit.targetUnit}` : '';
+
+  return {
+    label: `${formatProgressNumber(value)}/${formatProgressNumber(targetValue)}${unit}`,
+    percent: targetValue > 0 ? value / targetValue : 0,
+  };
+}
+
+function isNumericGoalComplete(habit: Habit, value: number) {
+  return Boolean(habit.targetValue && value >= habit.targetValue);
+}
+
+function getSubtaskProgress(
+  subtasks: HabitSubtask[],
+  completions: HabitSubtaskCompletion[]
+): HabitProgress {
+  const requiredSubtasks = subtasks.filter((subtask) => subtask.required);
+
+  if (requiredSubtasks.length === 0) {
+    return { label: 'No subtasks yet', percent: 0 };
+  }
+
+  const completedSubtaskIds = new Set(completions.map((completion) => completion.subtaskId));
+  const completedCount = requiredSubtasks.filter((subtask) =>
+    completedSubtaskIds.has(subtask.id)
+  ).length;
+
+  return {
+    label: `${completedCount}/${requiredSubtasks.length} subtasks`,
+    percent: completedCount / requiredSubtasks.length,
+  };
+}
+
+function areRequiredSubtasksComplete(
+  subtasks: HabitSubtask[],
+  completions: HabitSubtaskCompletion[]
+) {
+  const requiredSubtasks = subtasks.filter((subtask) => subtask.required);
+
+  if (requiredSubtasks.length === 0) {
+    return false;
+  }
+
+  const completedSubtaskIds = new Set(completions.map((completion) => completion.subtaskId));
+
+  return requiredSubtasks.every((subtask) => completedSubtaskIds.has(subtask.id));
+}
+
+function getCrownToastColor(tier: HabitCrownTier) {
+  if (tier === 'diamond') {
+    return '#7DE8FF';
+  }
+
+  if (tier === 'gold') {
+    return colors.warning;
+  }
+
+  if (tier === 'silver') {
+    return '#C0C7D2';
+  }
+
+  return '#CD7F32';
 }
 
 function getDateStripDays(weekStartDate: string, todayDate: string, selectedDate: string) {
@@ -2810,6 +3151,10 @@ function getBuildDayHelperLine(
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   screenContent: {
     gap: spacing.lg,
     paddingBottom: 112,
@@ -3702,15 +4047,19 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   numericInput: {
-    minHeight: 76,
+    height: 82,
     paddingHorizontal: spacing.lg,
+    paddingVertical: 0,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.lg,
     color: colors.text,
     backgroundColor: colors.surfaceElevated,
     fontSize: 32,
+    lineHeight: 38,
     fontWeight: '900',
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   numericQuickActions: {
     flexDirection: 'row',
@@ -3771,6 +4120,53 @@ const styles = StyleSheet.create({
   },
   modalActions: {
     gap: spacing.md,
+  },
+  crownToastWrap: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    paddingHorizontal: spacing.lg,
+    zIndex: 20,
+  },
+  crownToast: {
+    minHeight: 76,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    shadowColor: colors.warning,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  crownToastIcon: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceElevated,
+  },
+  crownToastCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  crownToastTitle: {
+    color: colors.text,
+    ...typography.caption,
+    fontWeight: '900',
+  },
+  crownToastBody: {
+    color: colors.textMuted,
+    ...typography.small,
   },
   layoutSizeGrid: {
     gap: spacing.sm,

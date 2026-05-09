@@ -10,3 +10,25 @@ export async function getAllSettings(): Promise<Setting[]> {
 
   return db.getAllAsync<Setting>('SELECT key, value FROM settings ORDER BY key ASC;');
 }
+
+export async function getSettingValue(key: string): Promise<string | null> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<Setting>(
+    'SELECT key, value FROM settings WHERE key = ? LIMIT 1;',
+    key
+  );
+
+  return row?.value ?? null;
+}
+
+export async function setSettingValue(key: string, value: string | null): Promise<void> {
+  const db = await getDatabase();
+
+  await db.runAsync(
+    `INSERT INTO settings (key, value)
+    VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value;`,
+    key,
+    value
+  );
+}

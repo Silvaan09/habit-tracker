@@ -41,8 +41,6 @@ export default function NotificationsScreen() {
         .sort((first, second) => (first.reminderTime ?? '').localeCompare(second.reminderTime ?? '')),
     [habits]
   );
-  const reminderPercent =
-    habits.length === 0 ? 0 : Math.round((reminderHabits.length / habits.length) * 100);
 
   const dayStatsHabits = useMemo<DayStatsHabit[]>(
     () =>

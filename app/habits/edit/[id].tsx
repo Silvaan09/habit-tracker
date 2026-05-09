@@ -1,12 +1,13 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { EmptyState } from '@/src/components/EmptyState';
 import { HabitForm, type HabitFormValues } from '@/src/components/HabitForm';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { Screen } from '@/src/components/Screen';
+import { UnsavedChangesModal } from '@/src/components/UnsavedChangesModal';
 import { initDatabase } from '@/src/db/database';
 import { getHabitById, updateHabit, updateHabitNotificationId } from '@/src/db/habits';
 import {
@@ -33,17 +34,24 @@ export default function EditHabitScreen() {
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [formDirty, setFormDirty] = useState(false);
+  const [unsavedPromptVisible, setUnsavedPromptVisible] = useState(false);
   const [submitRequestKey, setSubmitRequestKey] = useState(0);
   const fallbackRoute = useCallback(() => {
     safeBack({ pathname: '/habits/[id]', params: { id: habitId ?? '' } });
   }, [habitId]);
 
   const promptForUnsavedChanges = useCallback(() => {
-    Alert.alert('Save changes?', 'You have unsaved changes.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Discard', style: 'destructive', onPress: fallbackRoute },
-      { text: 'Save', onPress: () => setSubmitRequestKey((current) => current + 1) },
-    ]);
+    setUnsavedPromptVisible(true);
+  }, []);
+
+  const saveFromUnsavedPrompt = useCallback(() => {
+    setUnsavedPromptVisible(false);
+    setSubmitRequestKey((current) => current + 1);
+  }, []);
+
+  const discardFromUnsavedPrompt = useCallback(() => {
+    setUnsavedPromptVisible(false);
+    fallbackRoute();
   }, [fallbackRoute]);
 
   const requestLeave = useCallback(() => {
@@ -170,32 +178,41 @@ export default function EditHabitScreen() {
   }
 
   return (
-    <Screen contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <Text style={styles.eyebrow}>Habits</Text>
-        <Text style={styles.title}>Edit habit</Text>
-        <Text style={styles.subtitle}>
-          Adjust the look, name, and reminder without losing your history.
-        </Text>
-      </View>
+    <>
+      <Screen contentContainerStyle={styles.content}>
+        <View style={styles.header}>
+          <Text style={styles.eyebrow}>Habits</Text>
+          <Text style={styles.title}>Edit habit</Text>
+          <Text style={styles.subtitle}>
+            Adjust the look, name, and reminder without losing your history.
+          </Text>
+        </View>
 
-      <HabitForm
-        error={errorMessage}
-        initialValues={{
-          ...habit,
-          subtaskTitles:
-            habit.trackingType === 'subtasks'
-              ? subtasks.map((subtask) => subtask.title)
-              : undefined,
-        }}
-        onCancel={requestLeave}
-        onDirtyChange={setFormDirty}
-        onSubmit={handleSubmit}
+        <HabitForm
+          error={errorMessage}
+          initialValues={{
+            ...habit,
+            subtaskTitles:
+              habit.trackingType === 'subtasks'
+                ? subtasks.map((subtask) => subtask.title)
+                : undefined,
+          }}
+          onCancel={requestLeave}
+          onDirtyChange={setFormDirty}
+          onSubmit={handleSubmit}
+          saving={saving}
+          submitRequestKey={submitRequestKey}
+          submitTitle="Save Changes"
+        />
+      </Screen>
+      <UnsavedChangesModal
+        onCancel={() => setUnsavedPromptVisible(false)}
+        onDiscard={discardFromUnsavedPrompt}
+        onSave={saveFromUnsavedPrompt}
         saving={saving}
-        submitRequestKey={submitRequestKey}
-        submitTitle="Save Changes"
+        visible={unsavedPromptVisible}
       />
-    </Screen>
+    </>
   );
 }
 
