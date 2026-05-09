@@ -35,8 +35,8 @@ type HeatmapWeek = {
 };
 
 const WEEKDAY_LABELS = ['M', '', 'W', '', 'F', '', 'S'];
-const CELL_SIZE = 11;
-const CELL_GAP = 3;
+const CELL_SIZE = 13;
+const CELL_GAP = 4;
 const WEEKDAY_WIDTH = 18;
 
 export function ActivityHeatmap({
@@ -285,7 +285,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   weekdayColumn: {
-    gap: 3,
+    gap: CELL_GAP,
   },
   weekdayLabel: {
     width: WEEKDAY_WIDTH,
@@ -297,10 +297,10 @@ const styles = StyleSheet.create({
   },
   weeksRow: {
     flexDirection: 'row',
-    gap: 3,
+    gap: CELL_GAP,
   },
   weekColumn: {
-    gap: 3,
+    gap: CELL_GAP,
   },
   cell: {
     width: CELL_SIZE,

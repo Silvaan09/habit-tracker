@@ -286,7 +286,11 @@ export default function StatsScreen() {
 
             <Animated.View style={[styles.chartTransition, { opacity: chartOpacity }]}>
               {selectedRange === 'week' ? (
-                <WeeklyActivityChart days={weeklyActivity} />
+                <View style={styles.weekRangeContent}>
+                  <Text style={styles.rangeTitle}>{getHeatmapRangeTitle('week', today)}</Text>
+                  <Text style={styles.rangeSummaryText}>{rangeSummaryText}</Text>
+                  <WeeklyActivityChart days={weeklyActivity} />
+                </View>
               ) : (
                 <ActivityHeatmap
                   days={rangeActivity}
@@ -512,6 +516,10 @@ function dayStatusToActivityDay(day: DayCompletionStatus): ActivityHeatmapDay {
 function getHeatmapRangeTitle(range: StatsRange, today: string) {
   const todayDate = parseDateString(today);
 
+  if (range === 'week') {
+    return formatRangeTitle(parseDateString(getRangeStartDate('week', today)), todayDate);
+  }
+
   if (range === 'month') {
     return format(todayDate, 'MMMM yyyy');
   }
@@ -521,6 +529,14 @@ function getHeatmapRangeTitle(range: StatsRange, today: string) {
   }
 
   return undefined;
+}
+
+function formatRangeTitle(startDate: Date, endDate: Date) {
+  if (format(startDate, 'yyyy') !== format(endDate, 'yyyy')) {
+    return `${format(startDate, 'MMM d, yyyy')} - ${format(endDate, 'MMM d, yyyy')}`;
+  }
+
+  return `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d, yyyy')}`;
 }
 
 function getRangeStartDate(range: StatsRange, today: string) {
@@ -653,8 +669,11 @@ const styles = StyleSheet.create({
     color: colors.background,
   },
   chartTransition: {
-    minHeight: 200,
-    justifyContent: 'center',
+    height: 284,
+    justifyContent: 'flex-start',
+  },
+  weekRangeContent: {
+    gap: spacing.lg,
   },
   analyticsPill: {
     paddingHorizontal: spacing.md,
@@ -764,6 +783,17 @@ const styles = StyleSheet.create({
   stateTitle: {
     color: colors.text,
     ...typography.heading,
+    textAlign: 'center',
+  },
+  rangeSummaryText: {
+    color: colors.textMuted,
+    ...typography.caption,
+    textAlign: 'center',
+  },
+  rangeTitle: {
+    color: colors.text,
+    ...typography.body,
+    fontWeight: '900',
     textAlign: 'center',
   },
 });

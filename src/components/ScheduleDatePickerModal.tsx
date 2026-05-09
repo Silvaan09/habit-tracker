@@ -6,6 +6,8 @@ import { BottomSheetModal } from '@/src/components/BottomSheetModal';
 import { colors, radius, spacing, typography } from '@/src/theme';
 import { formatDisplayDateDDMMYYYY, getTodayDateString } from '@/src/utils/dates';
 
+import { ChevronLeft, ChevronRight } from 'lucide-react-native';
+
 type ScheduleDatePickerModalProps = {
   visible: boolean;
   selectedDate: string;
@@ -69,7 +71,7 @@ export function ScheduleDatePickerModal({
             setVisibleMonth((current) => format(addMonths(parseISO(current), -1), 'yyyy-MM-dd'))
           }
           style={({ pressed }) => [styles.monthButton, pressed && styles.pressed]}>
-          <Text style={styles.monthButtonText}>{'<'}</Text>
+          <ChevronLeft size={22} color={colors.text} strokeWidth={3.5} />
         </Pressable>
         <Pressable
           accessibilityLabel="Jump to today"
@@ -88,7 +90,7 @@ export function ScheduleDatePickerModal({
             setVisibleMonth((current) => format(addMonths(parseISO(current), 1), 'yyyy-MM-dd'))
           }
           style={({ pressed }) => [styles.monthButton, pressed && styles.pressed]}>
-          <Text style={styles.monthButtonText}>{'>'}</Text>
+          <ChevronRight size={22} color={colors.text} strokeWidth={3.5} />
         </Pressable>
       </View>
 

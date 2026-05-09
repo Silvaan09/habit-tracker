@@ -570,10 +570,13 @@ export function HabitForm({
               value={targetValue}
             />
             <TextInputField
+              autoGrow
               blurOnSubmit
               editable={!saving}
               helper="Optional. Examples: pages, liters, minutes."
               label="Unit"
+              minInputHeight={44}
+              maxInputHeight={100}
               onChangeText={setTargetUnit}
               placeholder="pages"
               returnKeyType="done"

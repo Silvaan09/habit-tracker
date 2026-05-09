@@ -77,7 +77,7 @@ export function countFullyCompletedDays(dayStats: DayCompletionStatus[]): number
 }
 
 export function countTrackedDays(dayStats: DayCompletionStatus[]): number {
-  return dayStats.filter((day) => day.isTrackedDay).length;
+  return dayStats.filter((day) => day.completedCount > 0 || day.skippedCount > 0).length;
 }
 
 export function calculateAverageDailyCompletion(dayStats: DayCompletionStatus[]): number {
