@@ -103,6 +103,8 @@ import {
 type HabitProgress = {
   label: string;
   percent: number;
+  subtaskPreview?: { id: string; title: string; completed: boolean }[];
+  remainingSubtaskCount?: number;
 };
 
 type HabitCardVariant = 'small' | 'tall' | 'wide' | 'large';
@@ -2561,6 +2563,7 @@ function TodayHabitCard({
           {renderWideTitleBlock()}
           <View style={styles.wideCardControl}>{renderWideCheckboxControl()}</View>
         </View>
+        <View style={styles.wideMiddleArea}>{renderWideCheckboxStatus()}</View>
         {renderHistory(styles.wideHistory)}
       </>
     );
@@ -2575,6 +2578,10 @@ function TodayHabitCard({
   }
 
   function renderProgressWideCard() {
+    const wideProgressLabel = progress
+      ? getWideProgressLabel(progress.label, habit.trackingType)
+      : null;
+
     return (
       <>
         <View style={styles.wideCardHeader}>
@@ -2582,29 +2589,132 @@ function TodayHabitCard({
           {renderWideTitleBlock()}
           <View style={styles.wideProgressColumn}>
             {renderProgressControl('wide')}
-            {progress ? (
-              <Pressable
-                accessibilityLabel={`Update progress for ${habit.name}: ${getWideProgressLabel(
-                  progress.label,
-                  habit.trackingType
-                )}`}
-                accessibilityRole="button"
-                disabled={disabled || progressDisabled}
-                onPress={handleEditProgress}
-                style={({ pressed }) => [
-                  styles.wideProgressPressable,
-                  pressed && styles.pressed,
-                  (disabled || progressDisabled) && styles.controlDisabled,
-                ]}>
-                <Text numberOfLines={1} style={styles.wideProgressText}>
-                  {getWideProgressLabel(progress.label, habit.trackingType)}
-                </Text>
-              </Pressable>
-            ) : null}
           </View>
+        </View>
+        <View style={styles.wideMiddleArea}>
+          {habit.trackingType === 'subtasks'
+            ? renderWideSubtaskPreview()
+            : renderWideNumericSummary(wideProgressLabel)}
         </View>
         {renderHistory(styles.wideHistory)}
       </>
+    );
+  }
+
+  function renderWideCheckboxStatus() {
+    const title = skipped ? 'Skipped today' : completed ? 'Done for today' : 'Still open';
+    const subtitle = skipped
+      ? 'Tap icon for reason'
+      : completed
+        ? 'Tap the circle to undo'
+        : 'Tap the circle when done';
+
+    return (
+      <View style={styles.wideStatusPill}>
+        <Text numberOfLines={1} style={styles.wideStatusTitle}>
+          {title}
+        </Text>
+        <Text numberOfLines={1} style={styles.wideStatusSubtitle}>
+          {subtitle}
+        </Text>
+      </View>
+    );
+  }
+
+  function renderWideSubtaskPreview() {
+    const preview = progress?.subtaskPreview ?? [];
+    const visiblePreview = preview.length >= 3 ? preview.slice(0, 2) : preview;
+    const remaining = (progress?.remainingSubtaskCount ?? 0) + (preview.length - visiblePreview.length);
+
+    if (preview.length === 0) {
+      return (
+        <Pressable
+          accessibilityLabel={`Open checklist for ${habit.name}`}
+          accessibilityRole="button"
+          disabled={disabled || progressDisabled}
+          onPress={handleEditProgress}
+          style={({ pressed }) => [
+            styles.wideSubtaskPreview,
+            pressed && styles.pressed,
+            (disabled || progressDisabled) && styles.controlDisabled,
+          ]}>
+          <Text style={styles.wideStatusSubtitle}>No subtasks yet</Text>
+        </Pressable>
+      );
+    }
+
+    return (
+      <Pressable
+        accessibilityLabel={`Open checklist for ${habit.name}`}
+        accessibilityRole="button"
+        disabled={disabled || progressDisabled}
+        onPress={handleEditProgress}
+        style={({ pressed }) => [
+          styles.wideSubtaskPreview,
+          pressed && styles.pressed,
+          (disabled || progressDisabled) && styles.controlDisabled,
+        ]}>
+        {visiblePreview.map((subtask) => (
+          <View key={subtask.id} style={styles.wideSubtaskPreviewRow}>
+            <View
+              style={[
+                styles.wideSubtaskPreviewDot,
+                subtask.completed && styles.completedWideSubtaskPreviewDot,
+              ]}>
+              {subtask.completed ? (
+                <Ionicons name="checkmark" size={9} color={colors.background} />
+              ) : null}
+            </View>
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.wideSubtaskPreviewText,
+                subtask.completed && styles.completedWideSubtaskPreviewText,
+              ]}>
+              {subtask.title}
+            </Text>
+          </View>
+        ))}
+        {remaining > 0 ? (
+          <Text numberOfLines={1} style={styles.wideMoreSubtasksText}>
+            +{remaining} more
+          </Text>
+        ) : null}
+      </Pressable>
+    );
+  }
+
+  function renderWideNumericSummary(label: string | null) {
+    if (!label || !progress) {
+      return null;
+    }
+
+    return (
+      <Pressable
+        accessibilityLabel={`Update progress for ${habit.name}: ${label}`}
+        accessibilityRole="button"
+        disabled={disabled || progressDisabled}
+        onPress={handleEditProgress}
+        style={({ pressed }) => [
+          styles.wideNumericSummary,
+          pressed && styles.pressed,
+          (disabled || progressDisabled) && styles.controlDisabled,
+        ]}>
+        <Text numberOfLines={2} style={styles.wideNumericSummaryText}>
+          {label}
+        </Text>
+        <View style={styles.wideNumericTrack}>
+          <View
+            style={[
+              styles.wideNumericFill,
+              {
+                backgroundColor: accentColor,
+                width: `${progressPercent * 100}%`,
+              },
+            ]}
+          />
+        </View>
+      </Pressable>
     );
   }
 
@@ -2767,8 +2877,8 @@ function ProgressRingButton({
   percent: number;
   size: 'compact' | 'wide' | 'large';
 }) {
-  const diameter = size === 'large' ? 96 : size === 'wide' ? 68 : 42;
-  const strokeWidth = size === 'large' ? 7 : size === 'wide' ? 5 : 4;
+  const diameter = size === 'large' ? 96 : size === 'wide' ? 78 : 42;
+  const strokeWidth = size === 'large' ? 7 : size === 'wide' ? 6 : 4;
   const radiusValue = (diameter - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radiusValue;
   const clampedPercent = Math.max(0, Math.min(percent, 1));
@@ -2897,6 +3007,12 @@ async function getProgressByHabitId(habits: Habit[], date: string) {
           {
             label: `${completedCount}/${requiredSubtasks.length} subtasks`,
             percent: completedCount / requiredSubtasks.length,
+            remainingSubtaskCount: Math.max(subtasks.length - 3, 0),
+            subtaskPreview: subtasks.slice(0, 3).map((subtask) => ({
+              completed: completedSubtaskIds.has(subtask.id),
+              id: subtask.id,
+              title: subtask.title,
+            })),
           },
         ];
       }
@@ -3913,9 +4029,9 @@ const styles = StyleSheet.create({
     borderRadius: 21,
   },
   wideProgressRingButton: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+    width: 78,
+    height: 78,
+    borderRadius: 39,
   },
   progressCircleText: {
     position: 'absolute',
@@ -3944,8 +4060,8 @@ const styles = StyleSheet.create({
   wideProgressCircleText: {
     position: 'absolute',
     color: colors.text,
-    fontSize: 16,
-    lineHeight: 20,
+    fontSize: 18,
+    lineHeight: 22,
     fontWeight: '900',
   },
   largeCheckControl: {
@@ -4046,6 +4162,14 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingRight: 86,
   },
+  wideMiddleArea: {
+    position: 'absolute',
+    top: 74,
+    right: 104,
+    bottom: 38,
+    left: spacing.md,
+    justifyContent: 'center',
+  },
   wideCardCopy: {
     flex: 1,
     alignSelf: 'stretch',
@@ -4056,7 +4180,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     right: 0,
-    width: 76,
+    width: 84,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -4064,7 +4188,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     right: 0,
-    width: 82,
+    width: 84,
     alignItems: 'center',
     gap: spacing.xs,
   },
@@ -4077,6 +4201,96 @@ const styles = StyleSheet.create({
     ...typography.small,
     fontWeight: '900',
     textAlign: 'center',
+  },
+  wideStatusPill: {
+    alignSelf: 'flex-start',
+    gap: 2,
+    maxWidth: '100%',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceElevated,
+  },
+  wideStatusTitle: {
+    color: colors.text,
+    ...typography.caption,
+    fontWeight: '900',
+  },
+  wideStatusSubtitle: {
+    color: colors.textMuted,
+    ...typography.small,
+    fontWeight: '700',
+  },
+  wideSubtaskPreview: {
+    gap: 2,
+    alignSelf: 'stretch',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceElevated,
+  },
+  wideSubtaskPreviewRow: {
+    minHeight: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  wideSubtaskPreviewDot: {
+    width: 13,
+    height: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.surfaceMuted,
+    borderRadius: radius.pill,
+  },
+  completedWideSubtaskPreviewDot: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  wideSubtaskPreviewText: {
+    flex: 1,
+    color: colors.textMuted,
+    ...typography.small,
+    fontWeight: '800',
+  },
+  completedWideSubtaskPreviewText: {
+    color: colors.primary,
+  },
+  wideMoreSubtasksText: {
+    color: colors.textSubtle,
+    ...typography.small,
+    lineHeight: 13,
+    fontWeight: '800',
+  },
+  wideNumericSummary: {
+    gap: 6,
+    alignSelf: 'stretch',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceElevated,
+  },
+  wideNumericSummaryText: {
+    color: colors.text,
+    ...typography.caption,
+    fontWeight: '900',
+  },
+  wideNumericTrack: {
+    height: 5,
+    overflow: 'hidden',
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceMuted,
+  },
+  wideNumericFill: {
+    height: '100%',
+    borderRadius: radius.pill,
   },
   wideHistory: {
     position: 'absolute',

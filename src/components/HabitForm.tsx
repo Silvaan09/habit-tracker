@@ -361,9 +361,13 @@ export function HabitForm({
 
         <TextInputField
           autoCapitalize="sentences"
+          autoGrow
+          blurOnSubmit={false}
           editable={!saving}
           error={validationMessage}
           label="Habit name"
+          minInputHeight={44}
+          maxInputHeight={100}
           onChangeText={(value) => {
             setName(value);
             setValidationMessage(null);
@@ -375,9 +379,11 @@ export function HabitForm({
 
         <TextInputField
           autoCapitalize="sentences"
+          autoGrow
           editable={!saving}
           label="Description"
-          multiline
+          minInputHeight={88}
+          maxInputHeight={160}
           onChangeText={setDescription}
           placeholder="A few quiet pages before bed"
           style={styles.descriptionInput}
@@ -492,10 +498,16 @@ export function HabitForm({
                 <View key={`${index}-${subtaskTitles.length}`} style={styles.subtaskEditorRow}>
                   <View style={styles.subtaskInputWrap}>
                     <TextInputField
+                      autoCapitalize="sentences"
+                      autoGrow
+                      blurOnSubmit={false}
                       editable={!saving}
                       label={`Item ${index + 1}`}
+                      minInputHeight={44}
+                      maxInputHeight={100}
                       onChangeText={(value) => updateSubtaskTitle(index, value)}
                       placeholder="Vitamin D"
+                      returnKeyType="done"
                       value={subtaskTitle}
                     />
                   </View>
@@ -558,11 +570,13 @@ export function HabitForm({
               value={targetValue}
             />
             <TextInputField
+              blurOnSubmit
               editable={!saving}
               helper="Optional. Examples: pages, liters, minutes."
               label="Unit"
               onChangeText={setTargetUnit}
               placeholder="pages"
+              returnKeyType="done"
               value={targetUnit}
             />
           </View>
@@ -955,8 +969,6 @@ const styles = StyleSheet.create({
   },
   descriptionInput: {
     minHeight: 88,
-    paddingTop: spacing.lg,
-    textAlignVertical: 'top',
   },
   iconPickerButton: {
     minHeight: 88,
