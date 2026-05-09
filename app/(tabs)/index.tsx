@@ -24,6 +24,7 @@ import {
   AppState,
   DeviceEventEmitter,
   GestureResponderEvent,
+  Keyboard,
   Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -141,7 +142,6 @@ const GRID_GAP = spacing.md;
 const GRID_HORIZONTAL_PADDING = 0;
 const SCREEN_HORIZONTAL_PADDING = 20;
 const LAYOUT_DRAG_HOLD_DELAY_MS = 200;
-const CROWN_TOAST_TOP_GAP = 0;
 const CROWN_EARNED_SETTING_PREFIX = 'crown-earned';
 const CROWN_TIER_RANK: Record<HabitCrownTier, number> = {
   none: 0,
@@ -183,6 +183,7 @@ export default function TodayScreen() {
   const selectedDateRef = useRef(selectedDate);
   const actualTodayDateRef = useRef(actualTodayDate);
   const hasLoadedTodayDataRef = useRef(false);
+  const pendingToggleHabitIdsRef = useRef(new Set<string>());
   const todayScrollRef = useRef<ScrollView | null>(null);
   const todayScrollYRef = useRef(0);
   const [loading, setLoading] = useState(true);
@@ -192,6 +193,7 @@ export default function TodayScreen() {
   const [skipLimitModalVisible, setSkipLimitModalVisible] = useState(false);
   const [skipReason, setSkipReason] = useState('');
   const [skipReasonError, setSkipReasonError] = useState<string | null>(null);
+  const [skipReasonHabitId, setSkipReasonHabitId] = useState<string | null>(null);
   const [skipping, setSkipping] = useState(false);
   const [progressEditorHabitId, setProgressEditorHabitId] = useState<string | null>(null);
   const [progressEditorLoading, setProgressEditorLoading] = useState(false);
@@ -403,6 +405,11 @@ export default function TodayScreen() {
     () => habits.find((habit) => habit.id === layoutSizeHabitId) ?? null,
     [habits, layoutSizeHabitId]
   );
+  const skipReasonHabit = useMemo(
+    () => habits.find((habit) => habit.id === skipReasonHabitId) ?? null,
+    [habits, skipReasonHabitId]
+  );
+  const skipReasonRecord = skipReasonHabitId ? skipByHabitId.get(skipReasonHabitId) : null;
   const editorCompletedSubtaskIds = useMemo(
     () => new Set(editorSubtaskCompletions.map((completion) => completion.subtaskId)),
     [editorSubtaskCompletions]
@@ -590,13 +597,33 @@ export default function TodayScreen() {
       return;
     }
 
+    if (pendingToggleHabitIdsRef.current.has(habitId)) {
+      return;
+    }
+
     const habit = habits.find((item) => item.id === habitId);
     const wasCompleted = completedHabitIds.has(habitId);
     const previousCrownMilestone = crownByHabitId[habitId] ?? getHabitCrownMilestone(0);
+    const previousCompletions = completions;
+    const previousSkips = skips;
+    const previousWeeklySkips = weeklySkips;
+
+    pendingToggleHabitIdsRef.current.add(habitId);
+    setCompletions((current) =>
+      syncOptimisticCompletionForHabit(current, habitId, selectedDate, !wasCompleted)
+    );
+
+    if (!wasCompleted) {
+      setSkips((current) =>
+        current.filter((skip) => !(skip.habitId === habitId && skip.date === selectedDate))
+      );
+      setWeeklySkips((current) =>
+        current.filter((skip) => !(skip.habitId === habitId && skip.date === selectedDate))
+      );
+    }
 
     try {
       setErrorMessage(null);
-      setBusyHabitIds((current) => ({ ...current, [habitId]: true }));
 
       if (wasCompleted) {
         await uncompleteHabitForDate(habitId, selectedDate);
@@ -604,14 +631,19 @@ export default function TodayScreen() {
         await completeHabitForDate(habitId, selectedDate);
       }
 
-      await refreshSelectedDateStatuses(
+      void refreshSelectedDateStatuses(
         habit && !wasCompleted ? { crownToastHabit: habit, previousCrownMilestone } : undefined
-      );
+      ).catch((error) => {
+        console.error('Failed to silently refresh Today after checkbox update', error);
+      });
     } catch (error) {
       console.error('Failed to toggle habit completion', error);
+      setCompletions(previousCompletions);
+      setSkips(previousSkips);
+      setWeeklySkips(previousWeeklySkips);
       setErrorMessage('Could not update that habit. Please try again.');
     } finally {
-      setBusyHabitIds((current) => ({ ...current, [habitId]: false }));
+      pendingToggleHabitIdsRef.current.delete(habitId);
     }
   }
 
@@ -638,6 +670,29 @@ export default function TodayScreen() {
     setSkipTargetHabitId(null);
     setSkipReason('');
     setSkipReasonError(null);
+  }
+
+  function openSkipReasonModal(habitId: string) {
+    if (!skipByHabitId.has(habitId)) {
+      return;
+    }
+
+    setSkipReasonHabitId(habitId);
+  }
+
+  function closeSkipReasonModal() {
+    setSkipReasonHabitId(null);
+  }
+
+  async function undoSkipFromReasonModal() {
+    if (!skipReasonHabitId) {
+      return;
+    }
+
+    const habitId = skipReasonHabitId;
+
+    setSkipReasonHabitId(null);
+    await undoSkip(habitId);
   }
 
   async function submitSkip() {
@@ -873,6 +928,7 @@ export default function TodayScreen() {
     const previousCrownMilestone = crownByHabitId[habit.id] ?? getHabitCrownMilestone(0);
 
     try {
+      Keyboard.dismiss();
       setSavingProgress(true);
       setProgressEditorError(null);
       await setNumericEntryForDate(habit.id, selectedDate, parsedValue);
@@ -1148,6 +1204,7 @@ export default function TodayScreen() {
         onEditProgress={openProgressEditor}
         onToggle={toggleHabit}
         onSkip={openSkipModal}
+        onShowSkipReason={openSkipReasonModal}
         onUndoSkip={undoSkip}
         onPress={layoutEditMode ? openLayoutSizeSelector : openHabitDetail}
       />
@@ -1711,10 +1768,33 @@ export default function TodayScreen() {
             </View>
             <PrimaryButton onPress={() => setSkipLimitModalVisible(false)} title="Close" />
       </BottomSheetModal>
+
+      <BottomSheetModal
+        onRequestClose={closeSkipReasonModal}
+        sheetStyle={styles.modalCard}
+        visible={Boolean(skipReasonHabit && skipReasonRecord)}>
+        {skipReasonHabit && skipReasonRecord ? (
+          <>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalEyebrow}>Skipped</Text>
+              <Text style={styles.modalTitle}>{skipReasonHabit.name}</Text>
+              <Text style={styles.modalText}>{selectedDateDisplay}</Text>
+            </View>
+            <View style={styles.skipReasonModalBox}>
+              <Text style={styles.skipReasonModalLabel}>Reason</Text>
+              <Text style={styles.skipReasonModalText}>{skipReasonRecord.reason}</Text>
+            </View>
+            <View style={styles.modalActions}>
+              <PrimaryButton onPress={closeSkipReasonModal} title="Close" variant="secondary" />
+              <PrimaryButton onPress={undoSkipFromReasonModal} title="Undo skip" />
+            </View>
+          </>
+        ) : null}
+      </BottomSheetModal>
       </Screen>
       <CrownMilestoneToast
         onDismiss={() => setCrownToast(null)}
-        topOffset={insets.top + CROWN_TOAST_TOP_GAP}
+        topOffset={insets.top}
         toast={crownToast}
       />
     </View>
@@ -2137,6 +2217,7 @@ type TodayHabitCardProps = {
   onEditProgress: (habitId: string) => void;
   onToggle: (habitId: string) => void;
   onSkip: (habitId: string) => void;
+  onShowSkipReason: (habitId: string) => void;
   onUndoSkip: (habitId: string) => void;
   onPress: (habitId: string) => void;
 };
@@ -2161,6 +2242,7 @@ function TodayHabitCard({
   onEditProgress,
   onToggle,
   onSkip,
+  onShowSkipReason,
   onUndoSkip,
   onPress,
 }: TodayHabitCardProps) {
@@ -2169,6 +2251,7 @@ function TodayHabitCard({
   const progressPercent = Math.max(0, Math.min(progress?.percent ?? (completed ? 1 : 0), 1));
   const visibleHistoryItems = variant === 'small' ? historyItems.slice(-5) : historyItems;
   const isProgressHabit = habit.trackingType === 'subtasks' || habit.trackingType === 'numeric';
+  const [controlPressActive, setControlPressActive] = useState(false);
 
   function handleToggle(event: GestureResponderEvent) {
     event.stopPropagation();
@@ -2178,6 +2261,11 @@ function TodayHabitCard({
   function handleSkip(event: GestureResponderEvent) {
     event.stopPropagation();
     onSkip(habit.id);
+  }
+
+  function handleShowSkipReason(event: GestureResponderEvent) {
+    event.stopPropagation();
+    onShowSkipReason(habit.id);
   }
 
   function handleUndoSkip(event: GestureResponderEvent) {
@@ -2224,6 +2312,22 @@ function TodayHabitCard({
     );
   }
 
+  function renderWideTitleBlock() {
+    return (
+      <View style={styles.wideTitleBlock}>
+        <Text numberOfLines={1} style={styles.wideHabitCardName}>
+          {habit.name}
+        </Text>
+        <View style={styles.streakLine}>
+          <View style={styles.streakDot} />
+          <Text numberOfLines={1} style={styles.habitCardHint}>
+            {getStreakLineText(crownMilestone.streakDays)}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
   function renderCheckControl(extraStyle?: ViewStyle) {
     return (
       <Pressable
@@ -2235,10 +2339,13 @@ function TodayHabitCard({
         disabled={disabled || toggleDisabled}
         hitSlop={8}
         onPress={handleToggle}
-        style={[
+        onPressIn={() => setControlPressActive(true)}
+        onPressOut={() => setControlPressActive(false)}
+        style={({ pressed }) => [
           styles.cardCheck,
           extraStyle,
           completed && styles.completedCardCheck,
+          pressed && styles.controlPressed,
           (disabled || toggleDisabled) && styles.controlDisabled,
         ]}>
         {completed ? <Ionicons name="checkmark" size={18} color={colors.background} /> : null}
@@ -2246,14 +2353,57 @@ function TodayHabitCard({
     );
   }
 
-  function renderProgressControl(size: 'compact' | 'large' = 'compact') {
+  function renderSmallCheckboxControl() {
     return (
       <ProgressRingButton
-        accessibilityLabel={`Update progress for ${habit.name}`}
+        accessibilityLabel={
+          skipped
+            ? `Show skip reason for ${habit.name}`
+            : `${completed ? 'Uncheck' : 'Check'} ${habit.name} for ${completionDateLabel}`
+        }
         color={skipped ? colors.warning : accentColor}
-        disabled={disabled || progressDisabled}
-        onPress={handleEditProgress}
-        percent={progressPercent}
+        disabled={disabled || (!skipped && toggleDisabled)}
+        icon={skipped ? 'skip' : completed ? 'check' : 'empty'}
+        onPress={skipped ? handleShowSkipReason : handleToggle}
+        onPressIn={() => setControlPressActive(true)}
+        onPressOut={() => setControlPressActive(false)}
+        percent={skipped || completed ? 1 : 0}
+        size="compact"
+      />
+    );
+  }
+
+  function renderWideCheckboxControl() {
+    return (
+      <ProgressRingButton
+        accessibilityLabel={
+          skipped
+            ? `Show skip reason for ${habit.name}`
+            : `${completed ? 'Uncheck' : 'Check'} ${habit.name} for ${completionDateLabel}`
+        }
+        color={skipped ? colors.warning : accentColor}
+        disabled={disabled || (!skipped && toggleDisabled)}
+        icon={skipped ? 'skip' : completed ? 'check' : 'empty'}
+        onPress={skipped ? handleShowSkipReason : handleToggle}
+        onPressIn={() => setControlPressActive(true)}
+        onPressOut={() => setControlPressActive(false)}
+        percent={skipped || completed ? 1 : 0}
+        size="wide"
+      />
+    );
+  }
+
+  function renderProgressControl(size: 'compact' | 'wide' | 'large' = 'compact') {
+    return (
+      <ProgressRingButton
+        accessibilityLabel={
+          skipped ? `Show skip reason for ${habit.name}` : `Update progress for ${habit.name}`
+        }
+        color={skipped ? colors.warning : accentColor}
+        disabled={disabled || (!skipped && progressDisabled)}
+        icon={skipped ? 'skip' : undefined}
+        onPress={skipped ? handleShowSkipReason : handleEditProgress}
+        percent={skipped ? 1 : progressPercent}
         size={size}
       />
     );
@@ -2306,12 +2456,11 @@ function TodayHabitCard({
       <>
         <View style={styles.cardTopRow}>
           {renderIcon(44)}
-          {renderCheckControl()}
+          {renderSmallCheckboxControl()}
         </View>
         {renderTitleBlock()}
         <View style={styles.cardSpacer} />
         {renderHistory(styles.cardHistory)}
-        {renderSkipReason()}
       </>
     );
   }
@@ -2333,13 +2482,23 @@ function TodayHabitCard({
         </View>
         {renderTitleBlock()}
         {progress ? (
-          <Text numberOfLines={1} style={styles.compactProgressText}>
-            {progress.label}
-          </Text>
+          <Pressable
+            accessibilityLabel={`Update progress for ${habit.name}: ${progress.label}`}
+            accessibilityRole="button"
+            disabled={disabled || progressDisabled}
+            onPress={handleEditProgress}
+            style={({ pressed }) => [
+              styles.compactProgressPressable,
+              pressed && styles.pressed,
+              (disabled || progressDisabled) && styles.controlDisabled,
+            ]}>
+            <Text numberOfLines={1} style={styles.compactProgressText}>
+              {progress.label}
+            </Text>
+          </Pressable>
         ) : null}
         <View style={styles.cardSpacer} />
         {renderHistory(styles.cardHistory)}
-        {renderSkipReason()}
       </>
     );
   }
@@ -2397,15 +2556,12 @@ function TodayHabitCard({
   function renderCheckboxWideCard() {
     return (
       <>
-        <View style={styles.wideCardRow}>
-          <View style={styles.wideCardCopy}>
-            {renderIcon(44)}
-            {renderTitleBlock({ lines: 1 })}
-          </View>
-          <View style={styles.wideCardControl}>{renderCheckControl(styles.largeCheckControl)}</View>
+        <View style={styles.wideCardHeader}>
+          {renderIcon(54)}
+          {renderWideTitleBlock()}
+          <View style={styles.wideCardControl}>{renderWideCheckboxControl()}</View>
         </View>
         {renderHistory(styles.wideHistory)}
-        {renderSkipReason()}
       </>
     );
   }
@@ -2421,20 +2577,33 @@ function TodayHabitCard({
   function renderProgressWideCard() {
     return (
       <>
-        <View style={styles.wideCardRow}>
-          <View style={styles.wideCardCopy}>
-            {renderIcon(44)}
-            {renderTitleBlock({ lines: 1 })}
+        <View style={styles.wideCardHeader}>
+          {renderIcon(54)}
+          {renderWideTitleBlock()}
+          <View style={styles.wideProgressColumn}>
+            {renderProgressControl('wide')}
             {progress ? (
-              <Text numberOfLines={1} style={styles.compactProgressText}>
-                {progress.label}
-              </Text>
+              <Pressable
+                accessibilityLabel={`Update progress for ${habit.name}: ${getWideProgressLabel(
+                  progress.label,
+                  habit.trackingType
+                )}`}
+                accessibilityRole="button"
+                disabled={disabled || progressDisabled}
+                onPress={handleEditProgress}
+                style={({ pressed }) => [
+                  styles.wideProgressPressable,
+                  pressed && styles.pressed,
+                  (disabled || progressDisabled) && styles.controlDisabled,
+                ]}>
+                <Text numberOfLines={1} style={styles.wideProgressText}>
+                  {getWideProgressLabel(progress.label, habit.trackingType)}
+                </Text>
+              </Pressable>
             ) : null}
           </View>
-          <View style={styles.wideCardControl}>{renderProgressControl('large')}</View>
         </View>
         {renderHistory(styles.wideHistory)}
-        {renderSkipReason()}
       </>
     );
   }
@@ -2558,11 +2727,11 @@ function TodayHabitCard({
         variant === 'wide' && styles.wideHabitCard,
         variant === 'large' && styles.largeHabitCard,
         cardStyle,
-        completed && styles.completedHabitCard,
+        completed && isProgressHabit && styles.completedHabitCard,
         skipped && styles.skippedHabitCard,
         editMode && styles.layoutEditableHabitCard,
         selectedForLayout && styles.selectedLayoutHabitCard,
-        pressed && styles.pressed,
+        pressed && !controlPressActive && styles.pressed,
         disabled && styles.disabledCard,
       ]}>
       {editMode ? (
@@ -2581,19 +2750,25 @@ function ProgressRingButton({
   accessibilityLabel,
   color,
   disabled,
+  icon,
   onPress,
+  onPressIn,
+  onPressOut,
   percent,
   size,
 }: {
   accessibilityLabel: string;
   color: string;
   disabled: boolean;
+  icon?: 'check' | 'skip' | 'empty';
   onPress: (event: GestureResponderEvent) => void;
+  onPressIn?: () => void;
+  onPressOut?: () => void;
   percent: number;
-  size: 'compact' | 'large';
+  size: 'compact' | 'wide' | 'large';
 }) {
-  const diameter = size === 'large' ? 96 : 42;
-  const strokeWidth = size === 'large' ? 7 : 4;
+  const diameter = size === 'large' ? 96 : size === 'wide' ? 68 : 42;
+  const strokeWidth = size === 'large' ? 7 : size === 'wide' ? 5 : 4;
   const radiusValue = (diameter - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radiusValue;
   const clampedPercent = Math.max(0, Math.min(percent, 1));
@@ -2606,9 +2781,16 @@ function ProgressRingButton({
       accessibilityRole="button"
       disabled={disabled}
       onPress={onPress}
-      style={[
+      onPressIn={onPressIn}
+      onPressOut={onPressOut}
+      style={({ pressed }) => [
         styles.progressRingButton,
-        size === 'large' ? styles.largeProgressRingButton : styles.compactProgressRingButton,
+        size === 'large'
+          ? styles.largeProgressRingButton
+          : size === 'wide'
+            ? styles.wideProgressRingButton
+            : styles.compactProgressRingButton,
+        pressed && styles.controlPressed,
         disabled && styles.controlDisabled,
       ]}>
       <Svg height={diameter} style={styles.progressRingSvg} width={diameter}>
@@ -2617,7 +2799,7 @@ function ProgressRingButton({
           cy={diameter / 2}
           fill="transparent"
           r={radiusValue}
-          stroke={colors.surfaceMuted}
+          stroke={icon === 'skip' ? colors.warning : colors.surfaceMuted}
           strokeWidth={strokeWidth}
         />
         <Circle
@@ -2633,13 +2815,29 @@ function ProgressRingButton({
           transform={`rotate(-90 ${diameter / 2} ${diameter / 2})`}
         />
       </Svg>
-      {complete ? (
-        <Ionicons name="checkmark" size={size === 'large' ? 32 : 18} color={colors.text} />
+      {icon === 'skip' ? (
+        <Ionicons
+          name="play-skip-forward"
+          size={size === 'large' ? 30 : size === 'wide' ? 23 : 17}
+          color={colors.warning}
+        />
+      ) : icon === 'empty' ? null : icon === 'check' || complete ? (
+        <Ionicons
+          name="checkmark"
+          size={size === 'large' ? 32 : size === 'wide' ? 24 : 18}
+          color={colors.text}
+        />
       ) : (
         <Text
           numberOfLines={1}
           adjustsFontSizeToFit
-          style={size === 'large' ? styles.largeProgressCircleText : styles.progressCircleText}>
+          style={
+            size === 'large'
+              ? styles.largeProgressCircleText
+              : size === 'wide'
+                ? styles.wideProgressCircleText
+                : styles.progressCircleText
+          }>
           {Math.round(clampedPercent * 100)}%
         </Text>
       )}
@@ -2657,6 +2855,22 @@ function getStreakLineText(streakDays: number) {
 
 function getHistoryMarkerCount(variant: HabitCardVariant) {
   return variant === 'wide' || variant === 'large' ? 7 : 5;
+}
+
+function getWideProgressLabel(label: string, trackingType: Habit['trackingType']) {
+  const [current, rest] = label.split('/');
+
+  if (!current || !rest) {
+    return label;
+  }
+
+  if (trackingType === 'subtasks') {
+    const total = rest.replace(/\s*subtasks?\s*/i, '').trim();
+
+    return `${current.trim()} of ${total} done`;
+  }
+
+  return `${current.trim()} of ${rest.trim()}`;
 }
 
 async function getProgressByHabitId(habits: Habit[], date: string) {
@@ -3685,6 +3899,9 @@ const styles = StyleSheet.create({
   controlDisabled: {
     opacity: 0.42,
   },
+  controlPressed: {
+    opacity: 0.72,
+  },
   progressRingButton: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -3694,6 +3911,11 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
+  },
+  wideProgressRingButton: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
   },
   progressCircleText: {
     position: 'absolute',
@@ -3717,6 +3939,13 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 23,
     lineHeight: 27,
+    fontWeight: '900',
+  },
+  wideProgressCircleText: {
+    position: 'absolute',
+    color: colors.text,
+    fontSize: 16,
+    lineHeight: 20,
     fontWeight: '900',
   },
   largeCheckControl: {
@@ -3746,12 +3975,23 @@ const styles = StyleSheet.create({
   habitCardText: {
     gap: spacing.xs,
   },
+  wideTitleBlock: {
+    flex: 1,
+    minWidth: 0,
+    gap: spacing.xs,
+    justifyContent: 'center',
+  },
   centeredHabitCardText: {
     alignItems: 'center',
   },
   habitCardName: {
     color: colors.text,
     ...typography.caption,
+    fontWeight: '900',
+  },
+  wideHabitCardName: {
+    color: colors.text,
+    ...typography.body,
     fontWeight: '900',
   },
   habitCardHint: {
@@ -3776,6 +4016,11 @@ const styles = StyleSheet.create({
     ...typography.small,
     fontWeight: '800',
   },
+  compactProgressPressable: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    paddingVertical: 2,
+  },
   tallCardCenter: {
     flex: 1,
     alignItems: 'center',
@@ -3795,6 +4040,12 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingBottom: 12,
   },
+  wideCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingRight: 86,
+  },
   wideCardCopy: {
     flex: 1,
     alignSelf: 'stretch',
@@ -3802,9 +4053,30 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   wideCardControl: {
-    width: 108,
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 76,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  wideProgressColumn: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 82,
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  wideProgressPressable: {
+    maxWidth: 82,
+    paddingVertical: 2,
+  },
+  wideProgressText: {
+    color: colors.textMuted,
+    ...typography.small,
+    fontWeight: '900',
+    textAlign: 'center',
   },
   wideHistory: {
     position: 'absolute',
@@ -3844,6 +4116,24 @@ const styles = StyleSheet.create({
     color: colors.warning,
     ...typography.small,
     fontWeight: '800',
+  },
+  skipReasonModalBox: {
+    gap: spacing.xs,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceElevated,
+  },
+  skipReasonModalLabel: {
+    color: colors.warning,
+    ...typography.small,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  skipReasonModalText: {
+    color: colors.text,
+    ...typography.body,
   },
   emptyStack: {
     gap: spacing.md,

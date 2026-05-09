@@ -15,6 +15,7 @@ type ScreenProps = PropsWithChildren<{
   scroll?: boolean;
   scrollRef?: Ref<ScrollView>;
   onScroll?: ScrollViewProps['onScroll'];
+  keyboardShouldPersistTaps?: ScrollViewProps['keyboardShouldPersistTaps'];
   scrollEventThrottle?: ScrollViewProps['scrollEventThrottle'];
   scrollEnabled?: ScrollViewProps['scrollEnabled'];
   style?: StyleProp<ViewStyle>;
@@ -25,6 +26,7 @@ export function Screen({
   children,
   scroll = true,
   scrollRef,
+  keyboardShouldPersistTaps = 'handled',
   onScroll,
   scrollEventThrottle,
   scrollEnabled,
@@ -44,6 +46,7 @@ export function Screen({
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={[styles.content, contentContainerStyle]}
+        keyboardShouldPersistTaps={keyboardShouldPersistTaps}
         onScroll={onScroll}
         scrollEnabled={scrollEnabled}
         scrollEventThrottle={scrollEventThrottle}

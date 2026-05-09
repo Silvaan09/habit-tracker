@@ -45,6 +45,7 @@ export function HabitHeatmap({
     () => getHeatmapWeeks(today, days, completedDateSet, skippedDateSet),
     [completedDateSet, days, skippedDateSet, today]
   );
+  const totalCompletions = completedDateSet.size;
   const recentCompletions = useMemo(
     () => {
       const uniqueCompletionDates = Array.from(new Set(completionDates));
@@ -67,9 +68,9 @@ export function HabitHeatmap({
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         </View>
         <View style={styles.summaryPill}>
-          <Text style={styles.summaryValue}>{recentCompletions}</Text>
+          <Text style={styles.summaryValue}>{totalCompletions}</Text>
           <Text style={styles.summaryLabel}>
-            completion{recentCompletions === 1 ? '' : 's'}
+            completion{totalCompletions === 1 ? '' : 's'}
           </Text>
         </View>
       </View>

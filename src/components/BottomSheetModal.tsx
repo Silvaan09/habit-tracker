@@ -2,7 +2,9 @@ import { PropsWithChildren, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   StyleProp,
   StyleSheet,
@@ -131,7 +133,10 @@ export function BottomSheetModal({
             style={styles.backdropPressTarget}
           />
         ) : null}
-        <View pointerEvents="box-none" style={styles.sheetPosition}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          pointerEvents="box-none"
+          style={styles.sheetPosition}>
           <Animated.View
             style={[
               sheetStyle,
@@ -142,7 +147,7 @@ export function BottomSheetModal({
             ]}>
             {children}
           </Animated.View>
-        </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );

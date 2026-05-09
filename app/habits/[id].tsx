@@ -2,22 +2,28 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { AchievementCard } from '@/src/components/detail/AchievementCard';
+import { NumericProgressChart } from '@/src/components/detail/NumericProgressChart';
+import { SubtaskCompletionBreakdown } from '@/src/components/detail/SubtaskCompletionBreakdown';
 import { EmptyState } from '@/src/components/EmptyState';
-import { HabitCrownBadge } from '@/src/components/HabitCrownBadge';
 import { HabitHeatmap } from '@/src/components/HabitHeatmap';
 import { HabitIcon } from '@/src/components/HabitIcon';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { Screen } from '@/src/components/Screen';
-import { StatCard } from '@/src/components/StatCard';
 import { getCompletionsForHabit } from '@/src/db/completions';
 import { initDatabase } from '@/src/db/database';
 import { archiveHabit, getHabitById } from '@/src/db/habits';
-import { getNumericEntryForDate, setNumericEntryForDate } from '@/src/db/numericEntries';
+import {
+  getNumericEntriesForHabit,
+  getNumericEntryForDate,
+  setNumericEntryForDate,
+} from '@/src/db/numericEntries';
 import { getSkipsForHabit } from '@/src/db/skips';
 import {
   completeSubtaskForDate,
+  getSubtaskCompletionsForHabit,
   getSubtaskCompletionsForHabitDate,
   getSubtasksForHabit,
   uncompleteSubtaskForDate,
@@ -49,11 +55,14 @@ export default function HabitDetailScreen() {
   const [skips, setSkips] = useState<HabitSkip[]>([]);
   const [subtasks, setSubtasks] = useState<HabitSubtask[]>([]);
   const [subtaskCompletions, setSubtaskCompletions] = useState<HabitSubtaskCompletion[]>([]);
+  const [allSubtaskCompletions, setAllSubtaskCompletions] = useState<HabitSubtaskCompletion[]>([]);
   const [numericEntry, setNumericEntry] = useState<HabitNumericEntry | null>(null);
+  const [numericEntries, setNumericEntries] = useState<HabitNumericEntry[]>([]);
   const [numericValue, setNumericValue] = useState('');
   const [loading, setLoading] = useState(true);
   const [archiving, setArchiving] = useState(false);
   const [updatingProgress, setUpdatingProgress] = useState(false);
+  const [updatingSubtaskIds, setUpdatingSubtaskIds] = useState<Record<string, boolean>>({});
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const today = getTodayDateString();
@@ -106,29 +115,52 @@ export default function HabitDetailScreen() {
           setErrorMessage(null);
           await initDatabase();
 
-          const [
-            nextHabit,
-            nextCompletions,
-            nextSkips,
-            nextSubtasks,
-            nextSubtaskCompletions,
-            nextNumericEntry,
-          ] = await Promise.all([
-            getHabitById(habitId),
+          const nextHabit = await getHabitById(habitId);
+
+          if (!nextHabit || nextHabit.archived) {
+            if (isActive) {
+              setHabit(null);
+              setCompletions([]);
+              setSkips([]);
+              setSubtasks([]);
+              setSubtaskCompletions([]);
+              setAllSubtaskCompletions([]);
+              setNumericEntry(null);
+              setNumericEntries([]);
+              setNumericValue('');
+            }
+            return;
+          }
+
+          const [nextCompletions, nextSkips] = await Promise.all([
             getCompletionsForHabit(habitId),
             getSkipsForHabit(habitId),
-            getSubtasksForHabit(habitId),
-            getSubtaskCompletionsForHabitDate(habitId, progressDate),
-            getNumericEntryForDate(habitId, progressDate),
           ]);
+          const [nextSubtasks, nextSubtaskCompletions, nextAllSubtaskCompletions] =
+            nextHabit.trackingType === 'subtasks'
+              ? await Promise.all([
+                  getSubtasksForHabit(habitId),
+                  getSubtaskCompletionsForHabitDate(habitId, progressDate),
+                  getSubtaskCompletionsForHabit(habitId),
+                ])
+              : [[], [], []];
+          const [nextNumericEntry, nextNumericEntries] =
+            nextHabit.trackingType === 'numeric'
+              ? await Promise.all([
+                  getNumericEntryForDate(habitId, progressDate),
+                  getNumericEntriesForHabit(habitId),
+                ])
+              : [null, []];
 
           if (isActive) {
-            setHabit(nextHabit && !nextHabit.archived ? nextHabit : null);
-            setCompletions(nextHabit?.archived ? [] : nextCompletions);
-            setSkips(nextHabit?.archived ? [] : nextSkips);
-            setSubtasks(nextHabit?.archived ? [] : nextSubtasks);
-            setSubtaskCompletions(nextHabit?.archived ? [] : nextSubtaskCompletions);
-            setNumericEntry(nextHabit?.archived ? null : nextNumericEntry);
+            setHabit(nextHabit);
+            setCompletions(nextCompletions);
+            setSkips(nextSkips);
+            setSubtasks(nextSubtasks);
+            setSubtaskCompletions(nextSubtaskCompletions);
+            setAllSubtaskCompletions(nextAllSubtaskCompletions);
+            setNumericEntry(nextNumericEntry);
+            setNumericEntries(nextNumericEntries);
             setNumericValue(nextNumericEntry ? String(nextNumericEntry.value) : '');
           }
         } catch (error) {
@@ -189,18 +221,30 @@ export default function HabitDetailScreen() {
       return;
     }
 
-    const [nextCompletions, nextSkips, nextSubtaskCompletions, nextNumericEntry] =
+    const [nextCompletions, nextSkips, nextSubtaskCompletions, nextAllSubtaskCompletions, nextNumericEntry, nextNumericEntries] =
       await Promise.all([
         getCompletionsForHabit(habitId),
         getSkipsForHabit(habitId),
-        getSubtaskCompletionsForHabitDate(habitId, progressDate),
-        getNumericEntryForDate(habitId, progressDate),
+        habit?.trackingType === 'subtasks'
+          ? getSubtaskCompletionsForHabitDate(habitId, progressDate)
+          : Promise.resolve([]),
+        habit?.trackingType === 'subtasks'
+          ? getSubtaskCompletionsForHabit(habitId)
+          : Promise.resolve([]),
+        habit?.trackingType === 'numeric'
+          ? getNumericEntryForDate(habitId, progressDate)
+          : Promise.resolve(null),
+        habit?.trackingType === 'numeric'
+          ? getNumericEntriesForHabit(habitId)
+          : Promise.resolve([]),
       ]);
 
     setCompletions(nextCompletions);
     setSkips(nextSkips);
     setSubtaskCompletions(nextSubtaskCompletions);
+    setAllSubtaskCompletions(nextAllSubtaskCompletions);
     setNumericEntry(nextNumericEntry);
+    setNumericEntries(nextNumericEntries);
     setNumericValue(nextNumericEntry ? String(nextNumericEntry.value) : numericValue);
   }
 
@@ -209,15 +253,38 @@ export default function HabitDetailScreen() {
       return;
     }
 
-    const completedSubtaskIds = new Set(
-      subtaskCompletions.map((completion) => completion.subtaskId)
-    );
+    if (updatingSubtaskIds[subtaskId]) {
+      return;
+    }
+
+    const completedSubtaskIds = new Set(subtaskCompletions.map((completion) => completion.subtaskId));
+    const wasCompleted = completedSubtaskIds.has(subtaskId);
+    const previousSubtaskCompletions = subtaskCompletions;
+    const previousAllSubtaskCompletions = allSubtaskCompletions;
+    const optimisticCompletion: HabitSubtaskCompletion = {
+      completedAt: new Date().toISOString(),
+      date: progressDate,
+      habitId,
+      id: `optimistic_${subtaskId}_${Date.now()}`,
+      subtaskId,
+    };
+    const nextSubtaskCompletions = wasCompleted
+      ? subtaskCompletions.filter((completion) => completion.subtaskId !== subtaskId)
+      : [...subtaskCompletions, optimisticCompletion];
+    const nextAllSubtaskCompletions = wasCompleted
+      ? allSubtaskCompletions.filter(
+          (completion) => !(completion.subtaskId === subtaskId && completion.date === progressDate)
+        )
+      : [...allSubtaskCompletions, optimisticCompletion];
+
+    setSubtaskCompletions(nextSubtaskCompletions);
+    setAllSubtaskCompletions(nextAllSubtaskCompletions);
 
     try {
-      setUpdatingProgress(true);
+      setUpdatingSubtaskIds((current) => ({ ...current, [subtaskId]: true }));
       setErrorMessage(null);
 
-      if (completedSubtaskIds.has(subtaskId)) {
+      if (wasCompleted) {
         await uncompleteSubtaskForDate(subtaskId, progressDate);
       } else {
         await completeSubtaskForDate(subtaskId, habitId, progressDate);
@@ -226,9 +293,11 @@ export default function HabitDetailScreen() {
       await reloadProgress();
     } catch (error) {
       console.error('Failed to update subtask progress', error);
+      setSubtaskCompletions(previousSubtaskCompletions);
+      setAllSubtaskCompletions(previousAllSubtaskCompletions);
       setErrorMessage('Could not update that subtask. Please try again.');
     } finally {
-      setUpdatingProgress(false);
+      setUpdatingSubtaskIds((current) => ({ ...current, [subtaskId]: false }));
     }
   }
 
@@ -245,10 +314,21 @@ export default function HabitDetailScreen() {
     }
 
     try {
+      Keyboard.dismiss();
       setUpdatingProgress(true);
       setErrorMessage(null);
       await setNumericEntryForDate(habitId, progressDate, parsedValue);
-      await reloadProgress();
+      setNumericEntry({
+        date: progressDate,
+        habitId,
+        id: numericEntry?.id ?? `optimistic_numeric_${habitId}_${progressDate}`,
+        updatedAt: new Date().toISOString(),
+        value: parsedValue,
+      });
+      setNumericEntries((current) => upsertNumericEntry(current, habitId, progressDate, parsedValue));
+      void reloadProgress().catch((error) => {
+        console.error('Failed to silently refresh numeric detail progress', error);
+      });
     } catch (error) {
       console.error('Failed to save numeric progress', error);
       setErrorMessage('Could not save progress. Please try again.');
@@ -298,23 +378,25 @@ export default function HabitDetailScreen() {
 
         <View style={styles.headerSummary}>
           <View style={styles.summaryPill}>
-            {crownMilestone.tier === 'none' ? (
-              <Text style={styles.noCrownText}>No crown yet</Text>
-            ) : (
-              <HabitCrownBadge milestone={crownMilestone} />
-            )}
-            <Text style={styles.summaryLabel}>achievement</Text>
-          </View>
-          <View style={styles.summaryPill}>
             <Text style={styles.summaryValue}>{currentStreak}</Text>
             <Text style={styles.summaryLabel}>current streak</Text>
           </View>
           <View style={styles.summaryPill}>
+            <Text style={styles.summaryValue}>{longestStreak}</Text>
+            <Text style={styles.summaryLabel}>longest streak</Text>
+          </View>
+          <View style={styles.summaryPill}>
             <Text style={styles.summaryValue}>{Math.round(completionRate * 100)}%</Text>
-            <Text style={styles.summaryLabel}>completion</Text>
+            <Text style={styles.summaryLabel}>Success rate</Text>
+          </View>
+          <View style={styles.summaryPill}>
+            <Text style={styles.summaryValue}>{getScheduleSummary(habit)}</Text>
+            <Text style={styles.summaryLabel}>schedule</Text>
           </View>
         </View>
       </View>
+
+      <AchievementCard milestone={crownMilestone} />
 
       {errorMessage ? (
         <View style={styles.errorBanner}>
@@ -322,113 +404,46 @@ export default function HabitDetailScreen() {
         </View>
       ) : null}
 
-      <View style={styles.statsGrid}>
-        <StatCard label="Current streak" value={`${currentStreak} day${currentStreak === 1 ? '' : 's'}`} />
-        <StatCard label="Longest streak" value={`${longestStreak} day${longestStreak === 1 ? '' : 's'}`} />
-        <StatCard label="Total completions" value={String(completions.length)} />
-        <StatCard label="Completion rate" value={`${Math.round(completionRate * 100)}%`} />
-      </View>
-
       {habit.trackingType === 'subtasks' ? (
-        <View style={styles.progressCard}>
-          <View style={styles.progressHeader}>
-            <View>
-              <Text style={styles.eyebrow}>
-                {progressDate === today ? 'Today' : progressDate} checklist
-              </Text>
-              <Text style={styles.progressTitle}>Subtasks</Text>
-            </View>
-            <Text style={styles.progressPill}>
-              {subtaskCompletions.length}/{subtasks.filter((subtask) => subtask.required).length}
-            </Text>
-          </View>
-
-          {subtasks.length === 0 ? (
-            <Text style={styles.progressText}>No subtasks yet. Add them from Edit Habit.</Text>
-          ) : (
-            <View style={styles.subtaskList}>
-              {progressDateIsFuture ? (
-                <Text style={styles.progressText}>Future days cannot be completed yet.</Text>
-              ) : null}
-              {progressDateIsSkipped ? (
-                <Text style={styles.progressText}>Undo the skip before changing this day.</Text>
-              ) : null}
-              {subtasks.map((subtask) => {
-                const completed = subtaskCompletions.some(
-                  (completion) => completion.subtaskId === subtask.id
-                );
-
-                return (
-                  <Pressable
-                    accessibilityLabel={`${completed ? 'Uncheck' : 'Check'} ${subtask.title}`}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: completed }}
-                    disabled={updatingProgress || progressDateIsFuture || progressDateIsSkipped}
-                    key={subtask.id}
-                    onPress={() => toggleSubtask(subtask.id)}
-                    style={({ pressed }) => [
-                      styles.subtaskRow,
-                      completed && styles.completedSubtaskRow,
-                      pressed && styles.pressed,
-                      (updatingProgress || progressDateIsFuture || progressDateIsSkipped) &&
-                        styles.disabled,
-                    ]}>
-                    <View style={[styles.subtaskCheck, completed && styles.completedSubtaskCheck]}>
-                      {completed ? (
-                        <Ionicons name="checkmark" size={16} color={colors.background} />
-                      ) : null}
-                    </View>
-                    <Text style={styles.subtaskTitle}>{subtask.title}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          )}
-        </View>
+        <>
+          <SubtaskProgressCard
+            progressDate={progressDate}
+            progressDateIsFuture={progressDateIsFuture}
+            progressDateIsSkipped={progressDateIsSkipped}
+            subtasks={subtasks}
+            subtaskCompletions={subtaskCompletions}
+            today={today}
+            toggleSubtask={toggleSubtask}
+            updatingSubtaskIds={updatingSubtaskIds}
+          />
+          <SubtaskCompletionBreakdown
+            completions={allSubtaskCompletions}
+            subtasks={subtasks}
+          />
+        </>
       ) : null}
 
       {habit.trackingType === 'numeric' ? (
-        <View style={styles.progressCard}>
-          <View style={styles.progressHeader}>
-            <View>
-              <Text style={styles.eyebrow}>
-                {progressDate === today ? 'Today' : progressDate} progress
-              </Text>
-              <Text style={styles.progressTitle}>Numeric goal</Text>
-            </View>
-            <Text style={styles.progressPill}>
-              {formatProgressNumber(numericEntry?.value ?? 0)}/
-              {formatProgressNumber(habit.targetValue ?? 0)}
-              {habit.targetUnit ? ` ${habit.targetUnit}` : ''}
-            </Text>
-          </View>
-          <TextInput
-            accessibilityLabel="Numeric progress value"
-            editable={!updatingProgress && !progressDateIsFuture && !progressDateIsSkipped}
-            keyboardType="decimal-pad"
-            onChangeText={(value) => setNumericValue(value.replace(/[^0-9.,]/g, ''))}
-            placeholder="0"
-            placeholderTextColor={colors.textSubtle}
-            style={styles.numericInput}
-            value={numericValue}
+        <>
+          <NumericProgressCard
+            habit={habit}
+            numericEntry={numericEntry}
+            numericValue={numericValue}
+            onChangeNumericValue={(value) => setNumericValue(value.replace(/[^0-9.,]/g, ''))}
+            progressDate={progressDate}
+            progressDateIsFuture={progressDateIsFuture}
+            progressDateIsSkipped={progressDateIsSkipped}
+            saveNumericProgress={saveNumericProgress}
+            today={today}
+            updatingProgress={updatingProgress}
           />
-          <Text style={styles.progressText}>
-            Target: {formatProgressNumber(habit.targetValue ?? 0)}
-            {habit.targetUnit ? ` ${habit.targetUnit}` : ''}. Reaching the target completes the
-            habit for this date.
-          </Text>
-          {progressDateIsFuture ? (
-            <Text style={styles.progressText}>Future days cannot be completed yet.</Text>
-          ) : null}
-          {progressDateIsSkipped ? (
-            <Text style={styles.progressText}>Undo the skip before changing this day.</Text>
-          ) : null}
-          <PrimaryButton
-            disabled={updatingProgress || progressDateIsFuture || progressDateIsSkipped}
-            onPress={saveNumericProgress}
-            title={updatingProgress ? 'Saving...' : 'Save Progress'}
+          <NumericProgressChart
+            accentColor={habit.color ?? colors.primary}
+            entries={numericEntries}
+            today={today}
+            unit={habit.targetUnit}
           />
-        </View>
+        </>
       ) : null}
 
       <HabitHeatmap
@@ -456,12 +471,200 @@ export default function HabitDetailScreen() {
   );
 }
 
+function SubtaskProgressCard({
+  progressDate,
+  progressDateIsFuture,
+  progressDateIsSkipped,
+  subtasks,
+  subtaskCompletions,
+  today,
+  toggleSubtask,
+  updatingSubtaskIds,
+}: {
+  progressDate: string;
+  progressDateIsFuture: boolean;
+  progressDateIsSkipped: boolean;
+  subtasks: HabitSubtask[];
+  subtaskCompletions: HabitSubtaskCompletion[];
+  today: string;
+  toggleSubtask: (subtaskId: string) => void;
+  updatingSubtaskIds: Record<string, boolean>;
+}) {
+  const requiredSubtasks = subtasks.filter((subtask) => subtask.required);
+  const completedSubtaskIds = new Set(subtaskCompletions.map((completion) => completion.subtaskId));
+  const completedRequiredCount = requiredSubtasks.filter((subtask) =>
+    completedSubtaskIds.has(subtask.id)
+  ).length;
+
+  return (
+    <View style={styles.progressCard}>
+      <View style={styles.progressHeader}>
+        <View>
+          <Text style={styles.eyebrow}>
+            {progressDate === today ? 'Today' : progressDate} checklist
+          </Text>
+          <Text style={styles.progressTitle}>Subtasks</Text>
+        </View>
+        <Text style={styles.progressPill}>
+          {completedRequiredCount} of {requiredSubtasks.length} done
+        </Text>
+      </View>
+
+      {subtasks.length === 0 ? (
+        <Text style={styles.progressText}>No subtasks yet. Add them from Edit Habit.</Text>
+      ) : (
+        <View style={styles.subtaskList}>
+          {progressDateIsFuture ? (
+            <Text style={styles.progressText}>Future days cannot be completed yet.</Text>
+          ) : null}
+          {progressDateIsSkipped ? (
+            <Text style={styles.progressText}>Undo the skip before changing this day.</Text>
+          ) : null}
+          {subtasks.map((subtask) => {
+            const completed = completedSubtaskIds.has(subtask.id);
+            const updating = Boolean(updatingSubtaskIds[subtask.id]);
+
+            return (
+              <Pressable
+                accessibilityLabel={`${completed ? 'Uncheck' : 'Check'} ${subtask.title}`}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: completed }}
+                disabled={updating || progressDateIsFuture || progressDateIsSkipped}
+                key={subtask.id}
+                onPress={() => toggleSubtask(subtask.id)}
+                style={({ pressed }) => [
+                  styles.subtaskRow,
+                  completed && styles.completedSubtaskRow,
+                  pressed && styles.pressed,
+                  (updating || progressDateIsFuture || progressDateIsSkipped) && styles.disabled,
+                ]}>
+                <View style={[styles.subtaskCheck, completed && styles.completedSubtaskCheck]}>
+                  {completed ? (
+                    <Ionicons name="checkmark" size={16} color={colors.background} />
+                  ) : null}
+                </View>
+                <Text style={styles.subtaskTitle}>{subtask.title}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function NumericProgressCard({
+  habit,
+  numericEntry,
+  numericValue,
+  onChangeNumericValue,
+  progressDate,
+  progressDateIsFuture,
+  progressDateIsSkipped,
+  saveNumericProgress,
+  today,
+  updatingProgress,
+}: {
+  habit: Habit;
+  numericEntry: HabitNumericEntry | null;
+  numericValue: string;
+  onChangeNumericValue: (value: string) => void;
+  progressDate: string;
+  progressDateIsFuture: boolean;
+  progressDateIsSkipped: boolean;
+  saveNumericProgress: () => void;
+  today: string;
+  updatingProgress: boolean;
+}) {
+  return (
+    <View style={styles.progressCard}>
+      <View style={styles.progressHeader}>
+        <View>
+          <Text style={styles.eyebrow}>
+            {progressDate === today ? 'Today' : progressDate} progress
+          </Text>
+          <Text style={styles.progressTitle}>Numeric goal</Text>
+        </View>
+        <Text style={styles.progressPill}>
+          {formatProgressNumber(numericEntry?.value ?? 0)}/
+          {formatProgressNumber(habit.targetValue ?? 0)}
+          {habit.targetUnit ? ` ${habit.targetUnit}` : ''}
+        </Text>
+      </View>
+      <TextInput
+        accessibilityLabel="Numeric progress value"
+        editable={!updatingProgress && !progressDateIsFuture && !progressDateIsSkipped}
+        keyboardType="decimal-pad"
+        onChangeText={onChangeNumericValue}
+        placeholder="0"
+        placeholderTextColor={colors.textSubtle}
+        style={styles.numericInput}
+        value={numericValue}
+      />
+      <Text style={styles.progressText}>
+        Target: {formatProgressNumber(habit.targetValue ?? 0)}
+        {habit.targetUnit ? ` ${habit.targetUnit}` : ''}. Reaching the target completes the habit
+        for this date.
+      </Text>
+      {progressDateIsFuture ? (
+        <Text style={styles.progressText}>Future days cannot be completed yet.</Text>
+      ) : null}
+      {progressDateIsSkipped ? (
+        <Text style={styles.progressText}>Undo the skip before changing this day.</Text>
+      ) : null}
+      <PrimaryButton
+        disabled={updatingProgress || progressDateIsFuture || progressDateIsSkipped}
+        onPress={saveNumericProgress}
+        title={updatingProgress ? 'Saving...' : 'Save Progress'}
+      />
+    </View>
+  );
+}
+
 function formatProgressNumber(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 function isDateString(value: string | undefined) {
   return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+}
+
+function getScheduleSummary(habit: Habit) {
+  if (habit.scheduleType === 'weekdays') {
+    return 'Set days';
+  }
+
+  if (habit.scheduleType === 'cycle') {
+    const onDays = habit.scheduleOnDays ?? 1;
+    const offDays =
+      habit.scheduleOffDays ??
+      (habit.scheduleIntervalDays ? Math.max(habit.scheduleIntervalDays - 1, 0) : 0);
+
+    return `${onDays}d / ${offDays}d`;
+  }
+
+  return 'Daily';
+}
+
+function upsertNumericEntry(
+  entries: HabitNumericEntry[],
+  habitId: string,
+  date: string,
+  value: number
+) {
+  const nextEntry: HabitNumericEntry = {
+    date,
+    habitId,
+    id: entries.find((entry) => entry.date === date)?.id ?? `optimistic_numeric_${habitId}_${date}`,
+    updatedAt: new Date().toISOString(),
+    value,
+  };
+  const hasEntry = entries.some((entry) => entry.date === date);
+  const nextEntries = hasEntry
+    ? entries.map((entry) => (entry.date === date ? nextEntry : entry))
+    : [...entries, nextEntry];
+
+  return nextEntries.sort((first, second) => first.date.localeCompare(second.date));
 }
 
 const styles = StyleSheet.create({
@@ -521,16 +724,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     ...typography.small,
     textTransform: 'uppercase',
-  },
-  noCrownText: {
-    color: colors.textMuted,
-    ...typography.caption,
-    fontWeight: '900',
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.md,
   },
   actions: {
     gap: 10,

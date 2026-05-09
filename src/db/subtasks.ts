@@ -206,6 +206,21 @@ export async function getSubtaskCompletionsForHabitDate(
   return rows.map(mapSubtaskCompletionRow);
 }
 
+export async function getSubtaskCompletionsForHabit(
+  habitId: string
+): Promise<HabitSubtaskCompletion[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<HabitSubtaskCompletionRow>(
+    `SELECT id, habit_id, subtask_id, date, completed_at
+    FROM habit_subtask_completions
+    WHERE habit_id = ?
+    ORDER BY date ASC, completed_at ASC;`,
+    habitId
+  );
+
+  return rows.map(mapSubtaskCompletionRow);
+}
+
 export async function getAllSubtaskCompletions(): Promise<HabitSubtaskCompletion[]> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<HabitSubtaskCompletionRow>(
