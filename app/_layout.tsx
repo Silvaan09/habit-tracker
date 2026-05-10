@@ -45,6 +45,8 @@ export default function RootLayout() {
         <Stack.Screen name="habits/new" options={{ title: 'New habit' }} />
         <Stack.Screen name="habits/[id]" options={{ title: 'Habit' }} />
         <Stack.Screen name="habits/edit/[id]" options={{ title: 'Edit habit' }} />
+        <Stack.Screen name="achievements" options={{ title: 'Achievements' }} />
+        <Stack.Screen name="archived-habits" options={{ title: 'Archived habits' }} />
       </Stack>
       <StatusBar style="light" />
     </ThemeProvider>

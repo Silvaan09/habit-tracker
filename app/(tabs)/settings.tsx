@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
-import { Alert, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { router } from 'expo-router';
 
 import { BottomSheetModal } from '@/src/components/BottomSheetModal';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
@@ -14,7 +15,7 @@ import {
 } from '@/src/db/importData';
 import { getAllNumericEntries } from '@/src/db/numericEntries';
 import { resetAllData } from '@/src/db/reset';
-import { getAllHabits, getActiveHabits } from '@/src/db/habits';
+import { getAllHabits, getActiveHabits, getArchivedHabitCount } from '@/src/db/habits';
 import { getAllSkips, getSkipsForHabit } from '@/src/db/skips';
 import { getAllSettings } from '@/src/db/settings';
 import { getAllSubtaskCompletions, getAllSubtasks } from '@/src/db/subtasks';
@@ -33,6 +34,7 @@ export default function SettingsScreen() {
   const [resetting, setResetting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [habits, setHabits] = useState<Habit[]>([]);
+  const [archivedHabitCount, setArchivedHabitCount] = useState<number | null>(null);
   const [habitCompletions, setHabitCompletions] = useState<Record<string, string[]>>({});
   const [habitSkips, setHabitSkips] = useState<Record<string, string[]>>({});
 
@@ -55,7 +57,10 @@ export default function SettingsScreen() {
 
   const loadActivityData = useCallback(async () => {
     await initDatabase();
-    const activeHabits = await getActiveHabits();
+    const [activeHabits, archivedCount] = await Promise.all([
+      getActiveHabits(),
+      getArchivedHabitCount(),
+    ]);
     const [completionsByHabit, skipsByHabit] = await Promise.all([
       Promise.all(activeHabits.map((habit) => getCompletionsForHabit(habit.id))),
       Promise.all(activeHabits.map((habit) => getSkipsForHabit(habit.id))),
@@ -75,6 +80,7 @@ export default function SettingsScreen() {
     );
 
     setHabits(activeHabits);
+    setArchivedHabitCount(archivedCount);
     setHabitCompletions(completionMap);
     setHabitSkips(skipMap);
   }, []);
@@ -277,6 +283,30 @@ export default function SettingsScreen() {
           Your habits are saved on this phone. You can make a backup, restore a backup, or delete
           everything.
         </Text>
+        <Pressable
+          accessibilityLabel="Open archived habits"
+          accessibilityRole="button"
+          onPress={() => router.push('/archived-habits')}
+          style={({ pressed }) => [styles.dataLinkCard, pressed && styles.pressed]}>
+          <View style={styles.dataLinkIcon}>
+            <Text style={styles.dataLinkIconText}>↺</Text>
+          </View>
+          <View style={styles.dataLinkText}>
+            <Text style={styles.dataLinkTitle}>Archived habits</Text>
+            <Text style={styles.dataLinkSubtitle}>
+              Restore old habits.
+            </Text>
+          </View>
+          <View style={styles.dataLinkPill}>
+            <Text style={styles.dataLinkPillText}>
+              {archivedHabitCount === null
+                ? 'View'
+                : archivedHabitCount === 1
+                  ? '1 archived'
+                  : `${archivedHabitCount} archived`}
+            </Text>
+          </View>
+        </Pressable>
         <View style={styles.actions}>
           <PrimaryButton
             disabled={exporting || importing || resetting}
@@ -443,6 +473,60 @@ const styles = StyleSheet.create({
     color: colors.text,
     ...typography.heading,
   },
+  dataLinkCard: {
+    minHeight: 92,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceElevated,
+  },
+  dataLinkIcon: {
+    width: 46,
+    height: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: radius.lg,
+    backgroundColor: colors.primaryMuted,
+  },
+  dataLinkIconText: {
+    color: colors.primary,
+    fontSize: 24,
+    lineHeight: 28,
+    fontWeight: '900',
+  },
+  dataLinkText: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  dataLinkTitle: {
+    color: colors.text,
+    ...typography.body,
+    fontWeight: '900',
+  },
+  dataLinkSubtitle: {
+    color: colors.textMuted,
+    ...typography.caption,
+    fontWeight: '700',
+  },
+  dataLinkPill: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+  },
+  dataLinkPillText: {
+    color: colors.primary,
+    ...typography.small,
+    fontWeight: '900',
+  },
   messageCard: {
     padding: spacing.lg,
     borderWidth: 1,
@@ -457,6 +541,9 @@ const styles = StyleSheet.create({
   },
   actions: {
     gap: spacing.md,
+  },
+  pressed: {
+    opacity: 0.78,
   },
   bodyText: {
     color: colors.textMuted,

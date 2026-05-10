@@ -232,6 +232,52 @@ export async function getAllHabits(): Promise<Habit[]> {
   return rows.map(mapHabitRow);
 }
 
+export async function getArchivedHabits(): Promise<Habit[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<HabitRow>(
+    `SELECT
+      id,
+      name,
+      description,
+      icon,
+      icon_type,
+      icon_value,
+      icon_library,
+      color,
+      reminder_enabled,
+      reminder_time,
+      notification_id,
+      schedule_type,
+      schedule_weekdays,
+      schedule_interval_days,
+      schedule_on_days,
+      schedule_off_days,
+      schedule_start_date,
+      tracking_type,
+      target_value,
+      target_unit,
+      today_layout_size,
+      today_layout_order,
+      archived,
+      created_at,
+      updated_at
+    FROM habits
+    WHERE archived = 1
+    ORDER BY updated_at DESC, created_at DESC;`
+  );
+
+  return rows.map(mapHabitRow);
+}
+
+export async function getArchivedHabitCount(): Promise<number> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ count: number }>(
+    'SELECT COUNT(*) AS count FROM habits WHERE archived = 1;'
+  );
+
+  return row?.count ?? 0;
+}
+
 export async function getHabitById(id: string): Promise<Habit | null> {
   const db = await getDatabase();
   const row = await db.getFirstAsync<HabitRow>(
@@ -468,6 +514,34 @@ export async function archiveHabit(id: string): Promise<void> {
     new Date().toISOString(),
     id
   );
+}
+
+export async function restoreHabit(id: string): Promise<void> {
+  const db = await getDatabase();
+
+  await db.runAsync(
+    `UPDATE habits
+     SET archived = 0,
+         reminder_enabled = 0,
+         notification_id = NULL,
+         updated_at = ?
+     WHERE id = ?;`,
+    new Date().toISOString(),
+    id
+  );
+}
+
+export async function permanentlyDeleteHabit(id: string): Promise<void> {
+  const db = await getDatabase();
+
+  await db.withTransactionAsync(async () => {
+    await db.runAsync('DELETE FROM habit_subtask_completions WHERE habit_id = ?;', id);
+    await db.runAsync('DELETE FROM habit_numeric_entries WHERE habit_id = ?;', id);
+    await db.runAsync('DELETE FROM habit_skips WHERE habit_id = ?;', id);
+    await db.runAsync('DELETE FROM habit_completions WHERE habit_id = ?;', id);
+    await db.runAsync('DELETE FROM habit_subtasks WHERE habit_id = ?;', id);
+    await db.runAsync('DELETE FROM habits WHERE id = ?;', id);
+  });
 }
 
 export async function deleteAllHabits(): Promise<void> {

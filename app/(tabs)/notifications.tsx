@@ -215,7 +215,14 @@ export default function NotificationsScreen() {
       )}
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Your reminders</Text>
+        <View style={styles.remindersSectionHeader}>
+          <Text style={styles.sectionTitle}>Your reminders</Text>
+          {reminderHabits.length > 0 ? (
+            <View style={styles.reminderCountPill}>
+              <Text style={styles.reminderCountText}>{reminderHabits.length}</Text>
+            </View>
+          ) : null}
+        </View>
         {reminderHabits.length === 0 ? (
           <View style={styles.emptyStack}>
             <EmptyState
@@ -233,17 +240,60 @@ export default function NotificationsScreen() {
                 key={habit.id}
                 onPress={() => setEditingReminderHabit(habit)}
                 style={({ pressed }) => [styles.reminderRow, pressed && styles.pressed]}>
-                <HabitIcon
-                  color={habit.color ?? colors.habitGreen}
-                  fallbackIcon={habit.icon}
-                  iconLibrary={habit.iconLibrary}
-                  iconType={habit.iconType}
-                  iconValue={habit.iconValue}
-                  size={44}
-                />
-                <View style={styles.reminderText}>
-                  <Text style={styles.reminderName}>{habit.name}</Text>
-                  <Text style={styles.reminderMeta}>{getReminderMeta(habit)}</Text>
+                <View style={styles.reminderTimeBlock}>
+                  <Text style={styles.reminderTimeText}>{habit.reminderTime ?? '--:--'}</Text>
+                  <Text style={styles.reminderTimeLabel}>Reminder</Text>
+                </View>
+
+                <View style={styles.reminderMain}>
+                  <View style={styles.reminderIdentityRow}>
+                    <HabitIcon
+                      color={habit.color ?? colors.habitGreen}
+                      fallbackIcon={habit.icon}
+                      iconLibrary={habit.iconLibrary}
+                      iconType={habit.iconType}
+                      iconValue={habit.iconValue}
+                      size={42}
+                    />
+                    <View style={styles.reminderText}>
+                      <Text numberOfLines={2} style={styles.reminderName}>
+                        {habit.name}
+                      </Text>
+                      {habit.description ? (
+                        <Text numberOfLines={1} style={styles.reminderDescription}>
+                          {habit.description}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
+
+                  <View style={styles.reminderMetaRow}>
+                    <View style={styles.reminderMetaPill}>
+                      <Text numberOfLines={1} style={styles.reminderMetaText}>
+                        {getReminderScheduleSummary(habit)}
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.reminderMetaPill,
+                        styles.reminderTypePill,
+                        { borderColor: habit.color ?? colors.primary },
+                      ]}>
+                      <Text
+                        numberOfLines={1}
+                        style={[
+                          styles.reminderMetaText,
+                          styles.reminderTypeText,
+                          { color: habit.color ?? colors.primary },
+                        ]}>
+                        {getReminderTrackingSummary(habit)}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.reminderEditPill}>
+                  <Text style={styles.reminderEditText}>Edit</Text>
                 </View>
               </Pressable>
             ))}
@@ -260,10 +310,18 @@ export default function NotificationsScreen() {
   );
 }
 
-function getReminderMeta(habit: Habit) {
-  const time = habit.reminderTime ?? '--:--';
+function getReminderTrackingSummary(habit: Habit) {
+  if (habit.trackingType === 'numeric') {
+    const unit = habit.targetUnit?.trim();
 
-  return `${time} · ${getReminderScheduleSummary(habit)}`;
+    return unit ? `Goal in ${unit}` : 'Numeric goal';
+  }
+
+  if (habit.trackingType === 'subtasks') {
+    return 'Checklist';
+  }
+
+  return 'Checkbox';
 }
 
 function getReminderScheduleSummary(habit: Habit) {
@@ -410,15 +468,36 @@ const styles = StyleSheet.create({
     color: colors.text,
     ...typography.heading,
   },
+  remindersSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  reminderCountPill: {
+    minWidth: 34,
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceElevated,
+  },
+  reminderCountText: {
+    color: colors.text,
+    ...typography.caption,
+    fontWeight: '900',
+  },
   reminderList: {
     gap: spacing.md,
   },
   reminderRow: {
-    minHeight: 82,
+    minHeight: 132,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'stretch',
     gap: spacing.md,
-    padding: spacing.lg,
+    padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.xl,
@@ -431,6 +510,37 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.xs,
   },
+  reminderTimeBlock: {
+    width: 78,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: radius.lg,
+    backgroundColor: colors.primaryMuted,
+  },
+  reminderTimeText: {
+    color: colors.primary,
+    fontSize: 22,
+    lineHeight: 26,
+    fontWeight: '900',
+  },
+  reminderTimeLabel: {
+    color: colors.textMuted,
+    ...typography.small,
+    fontWeight: '800',
+  },
+  reminderMain: {
+    flex: 1,
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  reminderIdentityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   emptyStack: {
     gap: spacing.md,
   },
@@ -439,9 +549,49 @@ const styles = StyleSheet.create({
     ...typography.body,
     fontWeight: '900',
   },
-  reminderMeta: {
+  reminderDescription: {
     color: colors.textMuted,
     ...typography.caption,
+    fontWeight: '700',
+  },
+  reminderMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  reminderMetaPill: {
+    maxWidth: '100%',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceElevated,
+  },
+  reminderTypePill: {
+    backgroundColor: colors.surface,
+  },
+  reminderMetaText: {
+    color: colors.textMuted,
+    ...typography.small,
+    fontWeight: '800',
+  },
+  reminderTypeText: {
+    fontWeight: '900',
+  },
+  reminderEditPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceElevated,
+  },
+  reminderEditText: {
+    color: colors.textMuted,
+    ...typography.small,
+    fontWeight: '900',
   },
   timePill: {
     paddingHorizontal: spacing.md,

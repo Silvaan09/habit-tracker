@@ -12,6 +12,14 @@ import { router } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { ChevronRight } from 'lucide-react-native';
+
+import {
+  evaluateAchievements,
+  getAchievementSummary,
+  loadAchievementData,
+  type AchievementSummary,
+} from '@/src/achievements/evaluateAchievements';
 import { ActivityHeatmap, type ActivityHeatmapDay } from '@/src/components/ActivityHeatmap';
 import { EmptyState } from '@/src/components/EmptyState';
 import { HabitCrownBadge } from '@/src/components/HabitCrownBadge';
@@ -63,6 +71,7 @@ export default function StatsScreen() {
   const [habitStats, setHabitStats] = useState<HabitWithCompletions[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [achievementSummary, setAchievementSummary] = useState<AchievementSummary | null>(null);
   const [selectedRange, setSelectedRange] = useState<StatsRange>('week');
   const chartOpacity = useRef(new Animated.Value(1)).current;
 
@@ -72,11 +81,23 @@ export default function StatsScreen() {
     setErrorMessage(null);
     await initDatabase();
 
-    const activeHabits = await getActiveHabits();
+    const [activeHabits, achievementData] = await Promise.all([
+      getActiveHabits(),
+      loadAchievementData().catch((error) => {
+        console.error('Failed to load achievement summary for stats', error);
+        return null;
+      }),
+    ]);
     const [completionsByHabit, skipsByHabit] = await Promise.all([
       Promise.all(activeHabits.map((habit) => getCompletionsForHabit(habit.id))),
       Promise.all(activeHabits.map((habit) => getSkipsForHabit(habit.id))),
     ]);
+
+    if (achievementData) {
+      setAchievementSummary(getAchievementSummary(evaluateAchievements(achievementData)));
+    } else {
+      setAchievementSummary(null);
+    }
 
     setHabitStats(
       activeHabits.map((habit, index) => ({
@@ -238,6 +259,28 @@ export default function StatsScreen() {
           <PrimaryButton onPress={handleRetry} title="Retry" variant="secondary" />
         </View>
       ) : null}
+
+      <Pressable
+        accessibilityLabel="Open achievements"
+        accessibilityRole="button"
+        onPress={() => router.push('/achievements')}
+        style={({ pressed }) => [styles.achievementEntryCard, pressed && styles.pressed]}>
+        <View style={styles.achievementEntryIcon}>
+          <Text style={styles.achievementEntryIconText}>★</Text>
+        </View>
+        <View style={styles.achievementEntryText}>
+          <Text style={styles.achievementEntryTitle}>Achievements</Text>
+          <Text style={styles.achievementEntrySubtitle}>View milestones and badges</Text>
+        </View>
+        <View style={styles.achievementEntryProgress}>
+          <Text style={styles.achievementEntryProgressText}>
+            {achievementSummary
+              ? `${achievementSummary.unlocked}/${achievementSummary.total}`
+              : 'View'}
+          </Text>
+          <ChevronRight size={22} color={colors.text} strokeWidth={3.5} />
+        </View>
+      </Pressable>
 
       {habitStats.length === 0 ? (
         <View style={styles.emptyStack}>
@@ -612,6 +655,61 @@ const styles = StyleSheet.create({
   headerPillLabel: {
     color: colors.textMuted,
     ...typography.small,
+  },
+  achievementEntryCard: {
+    minHeight: 92,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
+    backgroundColor: colors.surface,
+  },
+  achievementEntryIcon: {
+    width: 50,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: radius.lg,
+    backgroundColor: colors.primaryMuted,
+  },
+  achievementEntryIconText: {
+    color: colors.primary,
+    fontSize: 24,
+    lineHeight: 28,
+    fontWeight: '900',
+  },
+  achievementEntryText: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  achievementEntryTitle: {
+    color: colors.text,
+    ...typography.body,
+    fontWeight: '900',
+  },
+  achievementEntrySubtitle: {
+    color: colors.textMuted,
+    ...typography.caption,
+    fontWeight: '700',
+  },
+  achievementEntryProgress: {
+    alignItems: 'flex-end',
+    gap: spacing.xs,
+  },
+  achievementEntryProgressText: {
+    color: colors.primary,
+    ...typography.body,
+    fontWeight: '900',
+  },
+  achievementEntryChevron: {
+    color: colors.textMuted,
+    ...typography.caption,
+    fontWeight: '900',
   },
   analyticsCard: {
     gap: spacing.xl,

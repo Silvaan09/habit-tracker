@@ -14,6 +14,10 @@ The app currently runs in **Expo Go** for development and is structured to suppo
 
 - **Local-first habit tracking** using SQLite
 - **Create, edit, archive, and restore habits**
+- **Archived habit management**
+  - View archived habits from Settings
+  - Restore archived habits without losing history
+  - Permanently delete archived habits and their dependent data
 - **Custom Lucide habit icons**
 - **Habit descriptions, colors, and live preview cards**
 - **Improved icon background color selector**
@@ -52,6 +56,10 @@ Habits can be scheduled in multiple ways:
   - Update numeric progress directly from the Today screen
 - **Partial progress indicators**
   - Subtask and numeric habits show percentage progress instead of only complete/incomplete state
+- **Custom app-styled confirmations**
+  - Unsaved changes prompts
+  - Archive confirmations
+  - Permanent delete confirmations
 
 ### Today Dashboard
 
@@ -61,6 +69,12 @@ Habits can be scheduled in multiple ways:
   - Done / skipped / remaining counts
   - Animated progress bar
 - **Compact habit box layout**
+- **Responsive habit card sizes**
+  - 1x1 compact cards
+  - 1x2 tall cards
+  - 2x1 wide cards
+  - 2x2 dashboard cards
+  - Type-specific layouts for checkbox, subtask, and numeric habits
 - **Drag-and-drop Today layout edit mode**
   - Choose card sizes: auto, small, tall, wide, or large
   - Hold a card briefly, then drag it over another card to reorder
@@ -102,7 +116,28 @@ Habits can be scheduled in multiple ways:
   - Heatmap overview
   - Subtask/numeric progress
 - **Habit-specific milestone/crown support**
+- **Crown unlock feedback**
+  - In-app styled notification when a new crown milestone is earned
 - **More distinct yellow-based stat color intensity levels**
+
+### Achievements
+
+- **Dedicated Achievements page**
+  - Open from the Stats tab
+  - Summary progress for unlocked achievements
+  - Category filters
+  - Grouped achievement list
+- **Derived local achievements**
+  - First steps
+  - Total completions
+  - Individual habit streaks
+  - Perfect day streaks
+  - Subtasks
+  - Numeric goals
+  - Recovery
+  - Long-term tracking
+- **No cloud account or remote achievement service**
+- **Achievements are evaluated from existing local history**
 
 ### Notifications
 
@@ -120,6 +155,10 @@ Habits can be scheduled in multiple ways:
 ### Settings and Data
 
 - **Settings screen** with simple local data controls
+- **Archived habits**
+  - View paused habits
+  - Restore habits to Today
+  - Delete archived habits forever with a custom confirmation
 - **Back up local data**
 - **Restore local data from exported backup text**
 - **Delete all local data with confirmation**
@@ -133,6 +172,7 @@ Habits can be scheduled in multiple ways:
 - **Lucide-only habit icon selection**
 - **Cleaner stack headers and custom back button**
 - **Bottom sheets with fade-only backdrops and smoother sheet motion**
+- **Custom dark neon modals for important confirmations**
 - **Bottom tab bar with visible labels and a center Add button**
 - **Scroll position preservation when returning to Today**
 
@@ -160,7 +200,9 @@ This project is currently in active development. The core habit tracking experie
 - Inline Today progress updates
 - Drag-and-drop Today layout editing
 - Stats and heatmaps
+- Achievements
 - Local reminders
+- Archived habit restore/delete management
 - Import/export/reset data management
 - Dark neon UI redesign
 
@@ -202,9 +244,7 @@ Possible future improvements include:
 - Habit templates
 - Categories
 - Morning and evening routines
-- Calendar picker refinements
-- Archive management
-- More detailed achievements and crown history
+- More detailed crown history
 - Better advanced analytics
 - Optional cloud sync
 - iOS/Android widgets

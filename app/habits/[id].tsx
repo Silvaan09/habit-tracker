@@ -2,8 +2,9 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { BottomSheetModal } from '@/src/components/BottomSheetModal';
 import { AchievementCard } from '@/src/components/detail/AchievementCard';
 import { NumericProgressChart } from '@/src/components/detail/NumericProgressChart';
 import { SubtaskCompletionBreakdown } from '@/src/components/detail/SubtaskCompletionBreakdown';
@@ -61,6 +62,7 @@ export default function HabitDetailScreen() {
   const [numericValue, setNumericValue] = useState('');
   const [loading, setLoading] = useState(true);
   const [archiving, setArchiving] = useState(false);
+  const [archivePromptVisible, setArchivePromptVisible] = useState(false);
   const [updatingProgress, setUpdatingProgress] = useState(false);
   const [updatingSubtaskIds, setUpdatingSubtaskIds] = useState<Record<string, boolean>>({});
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -185,14 +187,7 @@ export default function HabitDetailScreen() {
   );
 
   function confirmArchive() {
-    Alert.alert(
-      'Archive habit?',
-      'This habit will disappear from Today, but its historical completions will stay saved. Any scheduled reminder will be canceled.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Archive', style: 'destructive', onPress: handleArchive },
-      ]
-    );
+    setArchivePromptVisible(true);
   }
 
   async function handleArchive() {
@@ -207,6 +202,7 @@ export default function HabitDetailScreen() {
         await cancelHabitReminderForHabit(habit);
       }
       await archiveHabit(habitId);
+      setArchivePromptVisible(false);
       router.replace('/');
     } catch (error) {
       console.error('Failed to archive habit', error);
@@ -467,6 +463,63 @@ export default function HabitDetailScreen() {
           variant="danger"
         />
       </View>
+
+      <BottomSheetModal
+        closeOnBackdropPress={!archiving}
+        onRequestClose={() => {
+          if (!archiving) {
+            setArchivePromptVisible(false);
+          }
+        }}
+        sheetStyle={styles.archiveSheet}
+        visible={archivePromptVisible}>
+        <View style={styles.archivePromptHeader}>
+          <View style={styles.archivePromptIcon}>
+            <Ionicons color={colors.destructive} name="archive-outline" size={24} />
+          </View>
+          <View style={styles.archivePromptCopy}>
+            <Text style={styles.archivePromptTitle}>Archive habit?</Text>
+            <Text style={styles.archivePromptMessage}>
+              This habit will disappear from Today, but its historical completions will stay saved.
+              Archived habits can be restored from the settings tab.
+            </Text>
+          </View>
+        </View>
+        {habit ? (
+          <View style={styles.archiveHabitPreview}>
+            <HabitIcon
+              color={habit.color ?? colors.habitGreen}
+              fallbackIcon={habit.icon}
+              iconLibrary={habit.iconLibrary}
+              iconType={habit.iconType}
+              iconValue={habit.iconValue}
+              size={42}
+            />
+            <View style={styles.archiveHabitText}>
+              <Text numberOfLines={1} style={styles.archiveHabitName}>
+                {habit.name}
+              </Text>
+              <Text style={styles.archiveHabitMeta}>
+                {completionDates.length} completion{completionDates.length === 1 ? '' : 's'} kept
+              </Text>
+            </View>
+          </View>
+        ) : null}
+        <View style={styles.archivePromptActions}>
+          <PrimaryButton
+            disabled={archiving}
+            onPress={() => setArchivePromptVisible(false)}
+            title="Cancel"
+            variant="secondary"
+          />
+          <PrimaryButton
+            disabled={archiving}
+            onPress={handleArchive}
+            title={archiving ? 'Archiving...' : 'Archive habit'}
+            variant="danger"
+          />
+        </View>
+      </BottomSheetModal>
     </Screen>
   );
 }
@@ -727,6 +780,69 @@ const styles = StyleSheet.create({
   },
   actions: {
     gap: 10,
+  },
+  archiveSheet: {
+    gap: spacing.lg,
+    padding: spacing.xl,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  archivePromptHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  archivePromptIcon: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.destructive,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceElevated,
+  },
+  archivePromptCopy: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  archivePromptTitle: {
+    color: colors.text,
+    ...typography.heading,
+  },
+  archivePromptMessage: {
+    color: colors.textMuted,
+    ...typography.body,
+  },
+  archiveHabitPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceElevated,
+  },
+  archiveHabitText: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  archiveHabitName: {
+    color: colors.text,
+    ...typography.body,
+    fontWeight: '900',
+  },
+  archiveHabitMeta: {
+    color: colors.textMuted,
+    ...typography.caption,
+    fontWeight: '700',
+  },
+  archivePromptActions: {
+    gap: spacing.md,
   },
   progressCard: {
     gap: spacing.lg,
