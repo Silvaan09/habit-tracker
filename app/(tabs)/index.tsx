@@ -144,10 +144,22 @@ type TodayGridMetrics = {
   fullWidth: number;
 };
 
+type LayoutDragTouchOffset = {
+  x: number;
+  y: number;
+};
+
+type LayoutDragPointer = {
+  x: number;
+  y: number;
+};
+
 const GRID_GAP = spacing.md;
 const GRID_HORIZONTAL_PADDING = 0;
 const SCREEN_HORIZONTAL_PADDING = 20;
 const LAYOUT_DRAG_HOLD_DELAY_MS = 200;
+const LAYOUT_DRAG_EDGE_SCROLL_THRESHOLD = 104;
+const LAYOUT_DRAG_EDGE_SCROLL_MAX_STEP = 20;
 const CROWN_EARNED_SETTING_PREFIX = 'crown-earned';
 const CROWN_TIER_RANK: Record<HabitCrownTier, number> = {
   none: 0,
@@ -172,7 +184,7 @@ const LAYOUT_SIZE_OPTIONS: {
 const WEEKLY_SKIP_LIMIT = 1;
 
 export default function TodayScreen() {
-  const { width: windowWidth } = useWindowDimensions();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const [habits, setHabits] = useState<Habit[]>([]);
   const [completions, setCompletions] = useState<HabitCompletion[]>([]);
@@ -209,6 +221,12 @@ export default function TodayScreen() {
   const [layoutSizeHabitId, setLayoutSizeHabitId] = useState<string | null>(null);
   const [savingLayoutHabitId, setSavingLayoutHabitId] = useState<string | null>(null);
   const [layoutDraggingHabitId, setLayoutDraggingHabitId] = useState<string | null>(null);
+  const layoutDragStartScrollYRef = useRef(0);
+  const layoutDragPointerYRef = useRef<number | null>(null);
+  const layoutDragAutoScrollFrameRef = useRef<number | null>(null);
+  const todayGridRef = useRef<ElementRef<typeof View> | null>(null);
+  const layoutDragGridOriginRef = useRef<LayoutDragPointer | null>(null);
+  const layoutDragScrollDeltaY = useRef(new Animated.Value(0)).current;
   const layoutDropPreviewRefs = useRef(new Map<string, ElementRef<typeof View>>());
   const layoutDropPreviewHabitIdRef = useRef<string | null>(null);
   const [datePickerMonth, setDatePickerMonth] = useState(() =>
@@ -226,6 +244,15 @@ export default function TodayScreen() {
   const [numericClosePromptVisible, setNumericClosePromptVisible] = useState(false);
   const [savingProgress, setSavingProgress] = useState(false);
   const [crownToast, setCrownToast] = useState<CrownToastState | null>(null);
+
+  useEffect(
+    () => () => {
+      if (layoutDragAutoScrollFrameRef.current !== null) {
+        cancelAnimationFrame(layoutDragAutoScrollFrameRef.current);
+      }
+    },
+    []
+  );
 
   const loadTodayData = useCallback(async (dateToLoad: string) => {
     const currentToday = getTodayDateString();
@@ -1129,16 +1156,93 @@ export default function TodayScreen() {
   }
 
   function handleLayoutDragStart(habitId: string) {
+    layoutDragStartScrollYRef.current = todayScrollYRef.current;
+    layoutDragPointerYRef.current = null;
+    layoutDragGridOriginRef.current = null;
+    layoutDragScrollDeltaY.setValue(0);
+    todayGridRef.current?.measureInWindow((x, y) => {
+      layoutDragGridOriginRef.current = { x, y };
+    });
     setLayoutDraggingHabitId(habitId);
     setLayoutDropPreview(null);
     setLayoutSizeHabitId(null);
   }
 
-  function handleLayoutDragMove(habitId: string, dx: number, dy: number) {
+  function scrollTodayDuringLayoutDrag(pointerY: number) {
+    const bottomThreshold = windowHeight - LAYOUT_DRAG_EDGE_SCROLL_THRESHOLD;
+    let scrollStep = 0;
+
+    if (pointerY < LAYOUT_DRAG_EDGE_SCROLL_THRESHOLD) {
+      const intensity = (LAYOUT_DRAG_EDGE_SCROLL_THRESHOLD - pointerY) / LAYOUT_DRAG_EDGE_SCROLL_THRESHOLD;
+      scrollStep = -Math.ceil(intensity * LAYOUT_DRAG_EDGE_SCROLL_MAX_STEP);
+    } else if (pointerY > bottomThreshold) {
+      const intensity = (pointerY - bottomThreshold) / LAYOUT_DRAG_EDGE_SCROLL_THRESHOLD;
+      scrollStep = Math.ceil(intensity * LAYOUT_DRAG_EDGE_SCROLL_MAX_STEP);
+    }
+
+    if (scrollStep === 0) {
+      return;
+    }
+
+    const nextScrollY = Math.max(0, todayScrollYRef.current + scrollStep);
+
+    if (nextScrollY === todayScrollYRef.current) {
+      return;
+    }
+
+    todayScrollYRef.current = nextScrollY;
+    layoutDragScrollDeltaY.setValue(nextScrollY - layoutDragStartScrollYRef.current);
+    todayScrollRef.current?.scrollTo({ y: nextScrollY, animated: false });
+  }
+
+  function stopLayoutDragAutoScroll() {
+    if (layoutDragAutoScrollFrameRef.current !== null) {
+      cancelAnimationFrame(layoutDragAutoScrollFrameRef.current);
+      layoutDragAutoScrollFrameRef.current = null;
+    }
+
+    layoutDragPointerYRef.current = null;
+    layoutDragScrollDeltaY.setValue(0);
+  }
+
+  function startLayoutDragAutoScroll() {
+    if (layoutDragAutoScrollFrameRef.current !== null) {
+      return;
+    }
+
+    const tick = () => {
+      const pointerY = layoutDragPointerYRef.current;
+
+      if (pointerY === null) {
+        layoutDragAutoScrollFrameRef.current = null;
+        return;
+      }
+
+      scrollTodayDuringLayoutDrag(pointerY);
+      layoutDragAutoScrollFrameRef.current = requestAnimationFrame(tick);
+    };
+
+    layoutDragAutoScrollFrameRef.current = requestAnimationFrame(tick);
+  }
+
+  function handleLayoutDragMove(
+    habitId: string,
+    dx: number,
+    dy: number,
+    touchOffset: LayoutDragTouchOffset,
+    pointer: LayoutDragPointer
+  ) {
+    layoutDragPointerYRef.current = pointer.y;
+    startLayoutDragAutoScroll();
+    scrollTodayDuringLayoutDrag(pointer.y);
+
     const dropTarget = getLayoutDragDropTarget(
       habitId,
       dx,
       dy,
+      touchOffset,
+      getLayoutDragGridPointer(pointer, layoutDragGridOriginRef.current),
+      todayScrollYRef.current - layoutDragStartScrollYRef.current,
       todayGridLayout,
       todayGridMetrics,
       orderedScheduledHabits
@@ -1148,15 +1252,26 @@ export default function TodayScreen() {
   }
 
   function handleLayoutDragCancel() {
+    stopLayoutDragAutoScroll();
     setLayoutDraggingHabitId(null);
     setLayoutDropPreview(null);
   }
 
-  async function handleLayoutDragEnd(habitId: string, dx: number, dy: number) {
+  async function handleLayoutDragEnd(
+    habitId: string,
+    dx: number,
+    dy: number,
+    touchOffset: LayoutDragTouchOffset,
+    pointer: LayoutDragPointer
+  ) {
+    stopLayoutDragAutoScroll();
     const dropTarget = getLayoutDragDropTarget(
       habitId,
       dx,
       dy,
+      touchOffset,
+      getLayoutDragGridPointer(pointer, layoutDragGridOriginRef.current),
+      todayScrollYRef.current - layoutDragStartScrollYRef.current,
       todayGridLayout,
       todayGridMetrics,
       orderedScheduledHabits
@@ -1461,6 +1576,7 @@ export default function TodayScreen() {
         </View>
       ) : (
         <View
+          ref={todayGridRef}
           style={[
             styles.habitGrid,
             {
@@ -1484,9 +1600,14 @@ export default function TodayScreen() {
                 disabled={Boolean(savingLayoutHabitId)}
                 dragging={layoutDraggingHabitId === placement.item.habit.id}
                 enabled={layoutEditMode}
+                scrollDeltaY={layoutDragScrollDeltaY}
                 onDragCancel={handleLayoutDragCancel}
-                onDragEnd={(dx, dy) => handleLayoutDragEnd(placement.item.habit.id, dx, dy)}
-                onDragMove={(dx, dy) => handleLayoutDragMove(placement.item.habit.id, dx, dy)}
+                onDragEnd={(dx, dy, touchOffset, pointer) =>
+                  handleLayoutDragEnd(placement.item.habit.id, dx, dy, touchOffset, pointer)
+                }
+                onDragMove={(dx, dy, touchOffset, pointer) =>
+                  handleLayoutDragMove(placement.item.habit.id, dx, dy, touchOffset, pointer)
+                }
                 onDragStart={() => handleLayoutDragStart(placement.item.habit.id)}>
                 {renderTodayHabitCard(placement.item.habit, placement.item.variant)}
               </DraggableHabitCard>
@@ -1583,22 +1704,34 @@ export default function TodayScreen() {
                       value={editorNumericValue}
                     />
                     <View style={styles.numericQuickActions}>
-                      <Pressable
-                        accessibilityLabel="Decrease progress"
-                        accessibilityRole="button"
-                        disabled={savingProgress}
-                        onPress={() => adjustEditorNumericProgress(-1)}
-                        style={[styles.numericStepButton, savingProgress && styles.controlDisabled]}>
-                        <Text style={styles.numericStepText}>-1</Text>
-                      </Pressable>
-                      <Pressable
-                        accessibilityLabel="Increase progress"
-                        accessibilityRole="button"
-                        disabled={savingProgress}
-                        onPress={() => adjustEditorNumericProgress(1)}
-                        style={[styles.numericStepButton, savingProgress && styles.controlDisabled]}>
-                        <Text style={styles.numericStepText}>+1</Text>
-                      </Pressable>
+                      {[-1, 1, 10, 25].map((delta) => {
+                        const tone = getNumericQuickButtonTone(
+                          progressEditorHabit.color ?? colors.primary,
+                          delta
+                        );
+
+                        return (
+                          <Pressable
+                            accessibilityLabel={`${delta > 0 ? 'Increase' : 'Decrease'} progress by ${Math.abs(delta)}`}
+                            accessibilityRole="button"
+                            disabled={savingProgress}
+                            key={delta}
+                            onPress={() => adjustEditorNumericProgress(delta)}
+                            style={({ pressed }) => [
+                              styles.numericStepButton,
+                              {
+                                backgroundColor: tone.backgroundColor,
+                                borderColor: tone.borderColor,
+                              },
+                              pressed && styles.controlPressed,
+                              savingProgress && styles.controlDisabled,
+                            ]}>
+                            <Text style={[styles.numericStepText, { color: tone.textColor }]}>
+                              {delta > 0 ? `+${delta}` : delta}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
                     </View>
                   </View>
                 )}
@@ -2153,9 +2286,20 @@ type DraggableHabitCardProps = {
   disabled: boolean;
   dragging: boolean;
   enabled: boolean;
+  scrollDeltaY: Animated.Value;
   onDragCancel: () => void;
-  onDragEnd: (dx: number, dy: number) => void;
-  onDragMove: (dx: number, dy: number) => void;
+  onDragEnd: (
+    dx: number,
+    dy: number,
+    touchOffset: LayoutDragTouchOffset,
+    pointer: LayoutDragPointer
+  ) => void;
+  onDragMove: (
+    dx: number,
+    dy: number,
+    touchOffset: LayoutDragTouchOffset,
+    pointer: LayoutDragPointer
+  ) => void;
   onDragStart: () => void;
 };
 
@@ -2164,6 +2308,7 @@ function DraggableHabitCard({
   disabled,
   dragging,
   enabled,
+  scrollDeltaY,
   onDragCancel,
   onDragEnd,
   onDragMove,
@@ -2173,6 +2318,8 @@ function DraggableHabitCard({
   const lift = useRef(new Animated.Value(0)).current;
   const dragStartedRef = useRef(false);
   const dragHoldReadyRef = useRef(false);
+  const dragTouchOffsetRef = useRef<LayoutDragTouchOffset>({ x: 0, y: 0 });
+  const dragPointerRef = useRef<LayoutDragPointer>({ x: 0, y: 0 });
   const [holdReady, setHoldReady] = useState(false);
   const dragHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearDragHoldTimer = useCallback(() => {
@@ -2229,21 +2376,43 @@ function DraggableHabitCard({
           !disabled &&
           dragHoldReadyRef.current &&
           Math.abs(gestureState.dx) + Math.abs(gestureState.dy) > 8,
-        onPanResponderGrant: () => {
+        onPanResponderGrant: (event) => {
           dragStartedRef.current = true;
           clearDragHoldTimer();
+          dragTouchOffsetRef.current = {
+            x: event.nativeEvent.locationX,
+            y: event.nativeEvent.locationY,
+          };
+          dragPointerRef.current = {
+            x: event.nativeEvent.pageX,
+            y: event.nativeEvent.pageY,
+          };
           pan.stopAnimation();
           pan.setValue({ x: 0, y: 0 });
           onDragStart();
         },
         onPanResponderMove: (_, gestureState) => {
+          dragPointerRef.current = {
+            x: gestureState.moveX,
+            y: gestureState.moveY,
+          };
           pan.setValue({ x: gestureState.dx, y: gestureState.dy });
-          onDragMove(gestureState.dx, gestureState.dy);
+          onDragMove(
+            gestureState.dx,
+            gestureState.dy,
+            dragTouchOffsetRef.current,
+            dragPointerRef.current
+          );
         },
         onPanResponderRelease: (_, gestureState) => {
           dragStartedRef.current = false;
           resetDragHold();
-          onDragEnd(gestureState.dx, gestureState.dy);
+          onDragEnd(
+            gestureState.dx,
+            gestureState.dy,
+            dragTouchOffsetRef.current,
+            dragPointerRef.current
+          );
           resetPan();
         },
         onPanResponderTerminate: () => {
@@ -2272,6 +2441,7 @@ function DraggableHabitCard({
     inputRange: [0, 1],
     outputRange: [1, 1.07],
   });
+  const translateY = dragging ? Animated.add(pan.y, scrollDeltaY) : pan.y;
 
   return (
     <Animated.View
@@ -2285,7 +2455,7 @@ function DraggableHabitCard({
         {
           transform: [
             { translateX: pan.x },
-            { translateY: pan.y },
+            { translateY },
             { scale },
           ],
         },
@@ -3677,6 +3847,9 @@ function getLayoutDragDropTarget(
   habitId: string,
   dx: number,
   dy: number,
+  touchOffset: LayoutDragTouchOffset,
+  gridPointer: LayoutDragPointer | null,
+  scrollDeltaY: number,
   layout: TodayGridLayout,
   metrics: TodayGridMetrics,
   orderedHabits: Habit[]
@@ -3691,7 +3864,15 @@ function getLayoutDragDropTarget(
   const candidatePlacements = layout.placements.filter(
     (placement) => placement.item.habit.id !== habitId
   );
-  const anchorPoint = getMovedGridPlacementLeadingAnchor(draggedPlacement, metrics, dx, dy);
+  const anchorPoint = getMovedGridPlacementFingerAnchor(
+    draggedPlacement,
+    metrics,
+    dx,
+    dy,
+    touchOffset,
+    gridPointer,
+    scrollDeltaY
+  );
   const targetPlacement = getGridPlacementAtPoint(anchorPoint, candidatePlacements, metrics);
 
   if (!targetPlacement) {
@@ -3747,18 +3928,42 @@ function getGridPlacementBounds(
   };
 }
 
-function getMovedGridPlacementLeadingAnchor(
+function getMovedGridPlacementFingerAnchor(
   placement: TodayGridPlacement,
   metrics: TodayGridMetrics,
   dx: number,
-  dy: number
+  dy: number,
+  touchOffset: LayoutDragTouchOffset,
+  gridPointer: LayoutDragPointer | null,
+  scrollDeltaY: number
 ) {
+  if (gridPointer) {
+    return {
+      x: gridPointer.x,
+      y: gridPointer.y + scrollDeltaY,
+    };
+  }
+
   const left = placement.column * (metrics.cellSize + metrics.gap);
   const top = placement.row * (metrics.cellSize + metrics.gap);
 
   return {
-    x: left + metrics.cellSize / 2 + dx,
-    y: top + dy,
+    x: left + touchOffset.x + dx,
+    y: top + touchOffset.y + dy + scrollDeltaY,
+  };
+}
+
+function getLayoutDragGridPointer(
+  pointer: LayoutDragPointer,
+  gridOrigin: LayoutDragPointer | null
+): LayoutDragPointer | null {
+  if (!gridOrigin) {
+    return null;
+  }
+
+  return {
+    x: pointer.x - gridOrigin.x,
+    y: pointer.y - gridOrigin.y,
   };
 }
 
@@ -4737,7 +4942,7 @@ const styles = StyleSheet.create({
   },
   wideMiddleArea: {
     position: 'absolute',
-    top: 74,
+    top: 80,
     right: 104,
     bottom: 38,
     left: spacing.md,
@@ -5301,7 +5506,7 @@ const styles = StyleSheet.create({
   },
   numericQuickActions: {
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   numericStepButton: {
     flex: 1,
