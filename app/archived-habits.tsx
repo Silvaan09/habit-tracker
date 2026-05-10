@@ -430,6 +430,12 @@ const styles = StyleSheet.create({
   },
   deleteSheet: {
     gap: spacing.lg,
+    padding: spacing.xl,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
   deleteHeader: {
     flexDirection: 'row',

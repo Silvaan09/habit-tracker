@@ -456,9 +456,8 @@ const styles = StyleSheet.create({
   },
   eyebrow: {
     color: colors.primary,
-    ...typography.small,
-    fontWeight: '900',
-    letterSpacing: 0.5,
+    ...typography.caption,
+    fontWeight: '800',
     textTransform: 'uppercase',
   },
   title: {
