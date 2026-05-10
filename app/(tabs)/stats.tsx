@@ -73,11 +73,11 @@ export default function StatsScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [achievementSummary, setAchievementSummary] = useState<AchievementSummary | null>(null);
   const [selectedRange, setSelectedRange] = useState<StatsRange>('week');
+  const hasLoadedStatsRef = useRef(false);
   const chartOpacity = useRef(new Animated.Value(1)).current;
 
   const today = getTodayDateString();
   const loadStats = useCallback(async () => {
-    setLoading(true);
     setErrorMessage(null);
     await initDatabase();
 
@@ -106,6 +106,7 @@ export default function StatsScreen() {
         skips: skipsByHabit[index],
       }))
     );
+    hasLoadedStatsRef.current = true;
     setLoading(false);
   }, []);
 
@@ -114,14 +115,22 @@ export default function StatsScreen() {
       let isActive = true;
 
       async function setup() {
+        const shouldShowInitialLoading = !hasLoadedStatsRef.current;
+
         try {
+          if (shouldShowInitialLoading) {
+            setLoading(true);
+          }
+
           await loadStats();
         } catch (error) {
           console.error('Failed to load overall stats', error);
 
           if (isActive) {
             setErrorMessage('Could not load your stats.');
-            setLoading(false);
+            if (shouldShowInitialLoading) {
+              setLoading(false);
+            }
           }
         }
       }
@@ -136,6 +145,7 @@ export default function StatsScreen() {
 
   async function handleRetry() {
     try {
+      setLoading(true);
       await loadStats();
     } catch (error) {
       console.error('Failed to retry loading stats', error);
@@ -269,15 +279,17 @@ export default function StatsScreen() {
           <Text style={styles.achievementEntryIconText}>★</Text>
         </View>
         <View style={styles.achievementEntryText}>
-          <Text style={styles.achievementEntryTitle}>Achievements</Text>
+          <View style={styles.achievementEntryTitleRow}>
+            <Text style={styles.achievementEntryTitle}>Achievements</Text>
+            <Text style={styles.achievementEntryProgressText}>
+              {achievementSummary
+                ? `${achievementSummary.unlocked}/${achievementSummary.total}`
+                : 'View'}
+            </Text>
+          </View>
           <Text style={styles.achievementEntrySubtitle}>View milestones and badges</Text>
         </View>
-        <View style={styles.achievementEntryProgress}>
-          <Text style={styles.achievementEntryProgressText}>
-            {achievementSummary
-              ? `${achievementSummary.unlocked}/${achievementSummary.total}`
-              : 'View'}
-          </Text>
+        <View style={styles.achievementEntryChevronWrap}>
           <ChevronRight size={22} color={colors.text} strokeWidth={3.5} />
         </View>
       </Pressable>
@@ -687,7 +699,14 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.xs,
   },
+  achievementEntryTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
   achievementEntryTitle: {
+    flex: 1,
     color: colors.text,
     ...typography.body,
     fontWeight: '900',
@@ -697,19 +716,14 @@ const styles = StyleSheet.create({
     ...typography.caption,
     fontWeight: '700',
   },
-  achievementEntryProgress: {
-    alignItems: 'flex-end',
-    gap: spacing.xs,
-  },
   achievementEntryProgressText: {
     color: colors.primary,
     ...typography.body,
     fontWeight: '900',
   },
-  achievementEntryChevron: {
-    color: colors.textMuted,
-    ...typography.caption,
-    fontWeight: '900',
+  achievementEntryChevronWrap: {
+    alignSelf: 'stretch',
+    justifyContent: 'center',
   },
   analyticsCard: {
     gap: spacing.xl,

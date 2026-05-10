@@ -3406,7 +3406,7 @@ function getNumericQuickButtonTone(accentColor: string, delta: number) {
     return {
       backgroundColor: colors.surface,
       borderColor: `${accentColor}66`,
-      textColor: colors.textMuted,
+      textColor: colors.text,
     };
   }
 

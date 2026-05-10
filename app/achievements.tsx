@@ -123,7 +123,7 @@ export default function AchievementsScreen() {
         <View style={styles.summarySide}>
           <Text style={styles.summaryPercent}>{completionPercent}%</Text>
           <Text style={styles.summaryHint}>
-            {summary.unsupported > 0 ? `${summary.unsupported} later` : 'Supported'}
+            {summary.unsupported > 0 ? `${summary.unsupported} later` : 'Completion'}
           </Text>
         </View>
         <View style={styles.summaryTrack}>

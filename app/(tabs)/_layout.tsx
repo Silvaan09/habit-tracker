@@ -8,12 +8,17 @@ import { HapticTab } from '@/components/haptic-tab';
 import { colors, radius } from '@/src/theme';
 import { TODAY_TAB_RESELECT_EVENT } from '@/src/utils/navigation';
 
+type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
+
 export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textSubtle,
+        sceneStyle: {
+          backgroundColor: colors.background,
+        },
         tabBarStyle: {
           position: 'absolute',
           height: 84,
@@ -31,15 +36,16 @@ export default function TabLayout() {
           elevation: 12,
           overflow: 'visible',
         },
-        tabBarLabelStyle: {
-          fontWeight: '800',
-          fontSize: 11,
-          marginTop: 2,
+        tabBarShowLabel: false,
+        tabBarIconStyle: {
+          marginTop: 0,
+          marginBottom: 0,
         },
-        tabBarShowLabel: true,
         tabBarItemStyle: {
-          paddingTop: 8,
-          paddingBottom: 8,
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingTop: 0,
+          paddingBottom: 0,
           overflow: 'visible',
         },
         headerShown: false,
@@ -50,7 +56,13 @@ export default function TabLayout() {
         options={{
           title: 'Today',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={color} />
+            <TabIconLabel
+              color={color}
+              focused={focused}
+              icon="home"
+              label="Today"
+              outlineIcon="home-outline"
+            />
           ),
         }}
         listeners={{
@@ -62,7 +74,13 @@ export default function TabLayout() {
         options={{
           title: 'Stats',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'stats-chart' : 'stats-chart-outline'} size={24} color={color} />
+            <TabIconLabel
+              color={color}
+              focused={focused}
+              icon="stats-chart"
+              label="Stats"
+              outlineIcon="stats-chart-outline"
+            />
           ),
         }}
       />
@@ -80,16 +98,13 @@ export default function TabLayout() {
         name="notifications"
         options={{
           title: 'Notifications',
-          tabBarLabel: ({ color }) => (
-            <Text numberOfLines={1} style={[styles.notificationsLabel, { color }]}>
-              Reminders
-            </Text>
-          ),
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? 'notifications' : 'notifications-outline'}
-              size={24}
+            <TabIconLabel
               color={color}
+              focused={focused}
+              icon="notifications"
+              label="Reminders"
+              outlineIcon="notifications-outline"
             />
           ),
         }}
@@ -99,11 +114,40 @@ export default function TabLayout() {
         options={{
           title: 'Settings',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'settings' : 'settings-outline'} size={24} color={color} />
+            <TabIconLabel
+              color={color}
+              focused={focused}
+              icon="settings"
+              label="Settings"
+              outlineIcon="settings-outline"
+            />
           ),
         }}
       />
     </Tabs>
+  );
+}
+
+function TabIconLabel({
+  color,
+  focused,
+  icon,
+  label,
+  outlineIcon,
+}: {
+  color: string;
+  focused: boolean;
+  icon: IoniconName;
+  label: string;
+  outlineIcon: IoniconName;
+}) {
+  return (
+    <View style={styles.tabIconLabel}>
+      <Ionicons name={focused ? icon : outlineIcon} size={24} color={color} />
+      <Text numberOfLines={1} style={[styles.tabLabel, { color }]}>
+        {label}
+      </Text>
+    </View>
   );
 }
 
@@ -144,10 +188,17 @@ const styles = StyleSheet.create({
     elevation: 6,
     zIndex: 2,
   },
-  notificationsLabel: {
+  tabIconLabel: {
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    transform: [{ translateY: 20 }],
+  },
+  tabLabel: {
     width: 96,
-    marginTop: 2,
     fontSize: 11,
+    lineHeight: 13,
     fontWeight: '800',
     textAlign: 'center',
   },

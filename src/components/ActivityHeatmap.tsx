@@ -30,14 +30,20 @@ type HeatmapCell = ActivityHeatmapDay & {
 
 type HeatmapWeek = {
   key: string;
-  monthLabel: string | null;
   cells: HeatmapCell[];
+};
+
+type HeatmapMonthLabel = {
+  key: string;
+  label: string;
+  left: number;
 };
 
 const WEEKDAY_LABELS = ['M', '', 'W', '', 'F', '', 'S'];
 const CELL_SIZE = 13;
 const CELL_GAP = 4;
 const WEEKDAY_WIDTH = 18;
+const MONTH_LABEL_WIDTH = 32;
 
 export function ActivityHeatmap({
   days,
@@ -57,21 +63,23 @@ export function ActivityHeatmap({
     () => getHeatmapWeeks(startDate, endDate, activityByDate),
     [activityByDate, endDate, startDate]
   );
+  const monthLabels = useMemo(
+    () => getHeatmapMonthLabels(weeks),
+    [weeks]
+  );
   const hasCompletions = days.some((day) => day.completedCount > 0);
   const grid = (
     <View style={styles.gridWrap}>
       {showMonthLabels ? (
         <View style={styles.monthRow}>
-          {weeks.map((week, weekIndex) =>
-            week.monthLabel ? (
-              <Text
-                key={week.key}
-                numberOfLines={1}
-                style={[styles.monthLabel, { left: getMonthLabelLeft(weekIndex) }]}>
-                {week.monthLabel}
-              </Text>
-            ) : null
-          )}
+          {monthLabels.map((month) => (
+            <Text
+              key={month.key}
+              numberOfLines={1}
+              style={[styles.monthLabel, { left: month.left }]}>
+              {month.label}
+            </Text>
+          ))}
         </View>
       ) : null}
 
@@ -166,7 +174,6 @@ function getHeatmapWeeks(
 
     return {
       key: format(weekStart, 'yyyy-MM-dd'),
-      monthLabel: getMonthLabelForWeek(weekStart, weekIndex, start, end),
       cells: Array.from({ length: 7 }, (_, dayIndex) => {
         const date = addDays(weekStart, dayIndex);
         const dateString = format(date, 'yyyy-MM-dd');
@@ -185,27 +192,48 @@ function getHeatmapWeeks(
   });
 }
 
-function getMonthLabelForWeek(weekStart: Date, weekIndex: number, start: Date, end: Date) {
-  const weekDates = Array.from({ length: 7 }, (_, dayIndex) => addDays(weekStart, dayIndex));
-  const startDateString = format(start, 'yyyy-MM-dd');
-  const firstInRangeDate = weekDates.find((date) => format(date, 'yyyy-MM-dd') === startDateString);
-  const firstOfMonthDate = weekDates.find(
-    (date) => date >= start && date <= end && format(date, 'd') === '1'
-  );
+function getHeatmapMonthLabels(weeks: HeatmapWeek[]): HeatmapMonthLabel[] {
+  const monthSpans = new Map<string, { label: string; minX: number; maxX: number }>();
 
-  if (weekIndex === 0 && firstInRangeDate) {
-    return format(firstInRangeDate, 'MMM');
-  }
+  weeks.forEach((week, weekIndex) => {
+    week.cells.forEach((cell) => {
+      if (!cell.inRange) {
+        return;
+      }
 
-  if (firstOfMonthDate) {
-    return format(firstOfMonthDate, 'MMM');
-  }
+      const date = parseISO(cell.date);
+      const monthKey = format(date, 'yyyy-MM');
+      const x = getCellCenterX(weekIndex);
+      const span = monthSpans.get(monthKey);
 
-  return null;
+      if (span) {
+        span.minX = Math.min(span.minX, x);
+        span.maxX = Math.max(span.maxX, x);
+        return;
+      }
+
+      monthSpans.set(monthKey, {
+        label: format(date, 'MMM'),
+        maxX: x,
+        minX: x,
+      });
+    });
+  });
+
+  return Array.from(monthSpans.entries()).map(([key, span]) => ({
+    key,
+    label: span.label,
+    left: (span.minX + span.maxX) / 2 - MONTH_LABEL_WIDTH / 2,
+  }));
 }
 
-function getMonthLabelLeft(weekIndex: number) {
-  return WEEKDAY_WIDTH + spacing.sm + weekIndex * (CELL_SIZE + CELL_GAP);
+function getCellCenterX(weekIndex: number) {
+  return (
+    WEEKDAY_WIDTH +
+    spacing.sm +
+    weekIndex * (CELL_SIZE + CELL_GAP) +
+    CELL_SIZE / 2
+  );
 }
 
 function getCellIntensityStyle(percentage: number) {
@@ -275,10 +303,11 @@ const styles = StyleSheet.create({
   },
   monthLabel: {
     position: 'absolute',
-    width: 32,
+    width: MONTH_LABEL_WIDTH,
     color: colors.textSubtle,
     fontSize: 9,
     fontWeight: '800',
+    textAlign: 'center',
   },
   heatmapBody: {
     flexDirection: 'row',

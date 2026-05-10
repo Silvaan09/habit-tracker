@@ -80,6 +80,7 @@ const WEEKDAY_OPTIONS = [
 ];
 const DEFAULT_HABIT_ICON = DEFAULT_LUCIDE_HABIT_ICON;
 const SCHEDULE_OPTIONS: HabitScheduleType[] = ['daily', 'weekdays', 'cycle'];
+const HABIT_NAME_MAX_LENGTH = 40;
 
 export function HabitForm({
   initialValues,
@@ -208,6 +209,11 @@ export function HabitForm({
       return;
     }
 
+    if (trimmedName.length > HABIT_NAME_MAX_LENGTH) {
+      setValidationMessage(`Habit name must be ${HABIT_NAME_MAX_LENGTH} characters or fewer.`);
+      return;
+    }
+
     const trimmedReminderTime = reminderTime.trim();
 
     if (reminderEnabled && !isValidReminderTime(trimmedReminderTime)) {
@@ -309,6 +315,13 @@ export function HabitForm({
     setTrackingValidationMessage(null);
   }
 
+  function updateHabitName(value: string) {
+    if (value.length <= HABIT_NAME_MAX_LENGTH || value.length < name.length) {
+      setName(value);
+      setValidationMessage(null);
+    }
+  }
+
   function addSubtaskTitle() {
     setSubtaskTitles((current) => [...current, '']);
   }
@@ -365,13 +378,12 @@ export function HabitForm({
           blurOnSubmit={false}
           editable={!saving}
           error={validationMessage}
+          helper={`${name.length}/${HABIT_NAME_MAX_LENGTH}`}
           label="Habit name"
+          maxLength={name.length <= HABIT_NAME_MAX_LENGTH ? HABIT_NAME_MAX_LENGTH : undefined}
           minInputHeight={44}
           maxInputHeight={100}
-          onChangeText={(value) => {
-            setName(value);
-            setValidationMessage(null);
-          }}
+          onChangeText={updateHabitName}
           placeholder="Read 10 pages"
           returnKeyType="done"
           value={name}

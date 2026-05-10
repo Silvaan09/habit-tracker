@@ -1,7 +1,8 @@
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
+import { ConfirmActionModal } from '@/src/components/ConfirmActionModal';
 import { HabitForm, type HabitFormValues } from '@/src/components/HabitForm';
 import { Screen } from '@/src/components/Screen';
 import { UnsavedChangesModal } from '@/src/components/UnsavedChangesModal';
@@ -16,6 +17,7 @@ export default function NewHabitScreen() {
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [formDirty, setFormDirty] = useState(false);
+  const [reminderWarningVisible, setReminderWarningVisible] = useState(false);
   const [unsavedPromptVisible, setUnsavedPromptVisible] = useState(false);
   const [submitRequestKey, setSubmitRequestKey] = useState(0);
 
@@ -74,11 +76,7 @@ export default function NewHabitScreen() {
         await updateHabitNotificationId(habit.id, notificationId);
 
         if (!notificationId) {
-          Alert.alert(
-            'Reminder not scheduled',
-            'Notifications are not enabled, so this reminder was not scheduled.',
-            [{ text: 'OK', onPress: () => router.replace('/') }]
-          );
+          setReminderWarningVisible(true);
           return;
         }
       }
@@ -117,6 +115,15 @@ export default function NewHabitScreen() {
         onSave={saveFromUnsavedPrompt}
         saving={saving}
         visible={unsavedPromptVisible}
+      />
+      <ConfirmActionModal
+        confirmLabel="OK"
+        message="Notifications are not enabled, so this reminder was not scheduled."
+        onCancel={() => router.replace('/')}
+        onConfirm={() => router.replace('/')}
+        showCancel={false}
+        title="Reminder not scheduled"
+        visible={reminderWarningVisible}
       />
     </>
   );

@@ -1,6 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { EmptyState } from '@/src/components/EmptyState';
@@ -31,6 +31,7 @@ export default function NotificationsScreen() {
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [editingReminderHabit, setEditingReminderHabit] = useState<Habit | null>(null);
+  const hasLoadedNotificationsRef = useRef(false);
 
   const today = getTodayDateString();
 
@@ -58,7 +59,6 @@ export default function NotificationsScreen() {
   );
 
   const loadNotificationsData = useCallback(async () => {
-    setLoading(true);
     setErrorMessage(null);
     await initDatabase();
 
@@ -89,6 +89,7 @@ export default function NotificationsScreen() {
     setHabitCompletions(completionMap);
     setHabitSkips(skipMap);
     setPermissionStatus(status);
+    hasLoadedNotificationsRef.current = true;
     setLoading(false);
   }, []);
 
@@ -97,14 +98,22 @@ export default function NotificationsScreen() {
       let isActive = true;
 
       async function setup() {
+        const shouldShowInitialLoading = !hasLoadedNotificationsRef.current;
+
         try {
+          if (shouldShowInitialLoading) {
+            setLoading(true);
+          }
+
           await loadNotificationsData();
         } catch (error) {
           console.error('Failed to load notifications screen', error);
 
           if (isActive) {
             setErrorMessage('Could not load reminders.');
-            setLoading(false);
+            if (shouldShowInitialLoading) {
+              setLoading(false);
+            }
           }
         }
       }
@@ -138,6 +147,7 @@ export default function NotificationsScreen() {
 
   async function handleRetry() {
     try {
+      setLoading(true);
       await loadNotificationsData();
     } catch (error) {
       console.error('Failed to retry notifications screen', error);
@@ -238,13 +248,10 @@ export default function NotificationsScreen() {
                 accessibilityLabel={`Edit reminder for ${habit.name}`}
                 accessibilityRole="button"
                 key={habit.id}
-                onPress={() => setEditingReminderHabit(habit)}
+                onPress={() =>
+                  router.push({ pathname: '/habits/edit/[id]', params: { id: habit.id } })
+                }
                 style={({ pressed }) => [styles.reminderRow, pressed && styles.pressed]}>
-                <View style={styles.reminderTimeBlock}>
-                  <Text style={styles.reminderTimeText}>{habit.reminderTime ?? '--:--'}</Text>
-                  <Text style={styles.reminderTimeLabel}>Reminder</Text>
-                </View>
-
                 <View style={styles.reminderMain}>
                   <View style={styles.reminderIdentityRow}>
                     <HabitIcon
@@ -292,9 +299,17 @@ export default function NotificationsScreen() {
                   </View>
                 </View>
 
-                <View style={styles.reminderEditPill}>
-                  <Text style={styles.reminderEditText}>Edit</Text>
-                </View>
+                <Pressable
+                  accessibilityLabel={`Change reminder time for ${habit.name}`}
+                  accessibilityRole="button"
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    setEditingReminderHabit(habit);
+                  }}
+                  style={({ pressed }) => [styles.reminderTimeBlock, pressed && styles.pressed]}>
+                  <Text style={styles.reminderTimeText}>{habit.reminderTime ?? '--:--'}</Text>
+                  <Text style={styles.reminderTimeLabel}>Reminder</Text>
+                </Pressable>
               </Pressable>
             ))}
           </View>
@@ -312,9 +327,7 @@ export default function NotificationsScreen() {
 
 function getReminderTrackingSummary(habit: Habit) {
   if (habit.trackingType === 'numeric') {
-    const unit = habit.targetUnit?.trim();
-
-    return unit ? `Goal in ${unit}` : 'Numeric goal';
+    return 'Numerical';
   }
 
   if (habit.trackingType === 'subtasks') {
@@ -493,11 +506,11 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   reminderRow: {
-    minHeight: 132,
+    minHeight: 118,
     flexDirection: 'row',
-    alignItems: 'stretch',
+    alignItems: 'center',
     gap: spacing.md,
-    padding: spacing.md,
+    padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.xl,
@@ -511,7 +524,9 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   reminderTimeBlock: {
-    width: 78,
+    width: 82,
+    minHeight: 76,
+    flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
@@ -522,8 +537,8 @@ const styles = StyleSheet.create({
   },
   reminderTimeText: {
     color: colors.primary,
-    fontSize: 22,
-    lineHeight: 26,
+    fontSize: 21,
+    lineHeight: 25,
     fontWeight: '900',
   },
   reminderTimeLabel: {
@@ -533,8 +548,8 @@ const styles = StyleSheet.create({
   },
   reminderMain: {
     flex: 1,
-    justifyContent: 'space-between',
-    gap: spacing.md,
+    gap: spacing.sm,
+    minWidth: 0,
   },
   reminderIdentityRow: {
     flexDirection: 'row',
@@ -558,9 +573,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xs,
+    paddingLeft: 52,
   },
   reminderMetaPill: {
-    maxWidth: '100%',
+    maxWidth: '50%',
     paddingHorizontal: spacing.sm,
     paddingVertical: 6,
     borderWidth: 1,
@@ -577,20 +593,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   reminderTypeText: {
-    fontWeight: '900',
-  },
-  reminderEditPill: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceElevated,
-  },
-  reminderEditText: {
-    color: colors.textMuted,
-    ...typography.small,
     fontWeight: '900',
   },
   timePill: {

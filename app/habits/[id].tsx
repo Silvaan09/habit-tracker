@@ -480,8 +480,8 @@ export default function HabitDetailScreen() {
           <View style={styles.archivePromptCopy}>
             <Text style={styles.archivePromptTitle}>Archive habit?</Text>
             <Text style={styles.archivePromptMessage}>
-              This habit will disappear from Today, but its historical completions will stay saved.
-              Archived habits can be restored from the settings tab.
+              This pauses the habit and hides it from Today. Your history will stay saved. Any
+              scheduled reminder will be canceled.
             </Text>
           </View>
         </View>

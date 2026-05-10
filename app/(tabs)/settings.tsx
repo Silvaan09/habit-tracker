@@ -1,9 +1,10 @@
 import { useState, useCallback, useMemo } from 'react';
-import { Alert, Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 
 import { BottomSheetModal } from '@/src/components/BottomSheetModal';
+import { ConfirmActionModal } from '@/src/components/ConfirmActionModal';
 import { PrimaryButton } from '@/src/components/PrimaryButton';
 import { Screen } from '@/src/components/Screen';
 import { getAllCompletions, getCompletionsForHabit } from '@/src/db/completions';
@@ -31,6 +32,9 @@ export default function SettingsScreen() {
   const [importModalVisible, setImportModalVisible] = useState(false);
   const [importJsonText, setImportJsonText] = useState('');
   const [importErrorMessage, setImportErrorMessage] = useState<string | null>(null);
+  const [pendingImportData, setPendingImportData] = useState<ImportedLocalData | null>(null);
+  const [importConfirmVisible, setImportConfirmVisible] = useState(false);
+  const [resetConfirmVisible, setResetConfirmVisible] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [habits, setHabits] = useState<Habit[]>([]);
@@ -162,18 +166,8 @@ export default function SettingsScreen() {
       return;
     }
 
-    Alert.alert(
-      'Replace local data?',
-      'This will replace all current local habit data on this device with the pasted import. Existing habits, completions, skips, and settings will be removed first.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Replace data',
-          style: 'destructive',
-          onPress: () => handleImportData(importedData),
-        },
-      ]
-    );
+    setPendingImportData(importedData);
+    setImportConfirmVisible(true);
   }
 
   async function handleImportData(importedData: ImportedLocalData) {
@@ -194,6 +188,8 @@ export default function SettingsScreen() {
 
       await replaceAllDataWithImportedData(importedData);
       setImportModalVisible(false);
+      setImportConfirmVisible(false);
+      setPendingImportData(null);
       setImportJsonText('');
       setImportErrorMessage(null);
       setMessage(
@@ -209,18 +205,7 @@ export default function SettingsScreen() {
   }
 
   function confirmResetAllData() {
-    Alert.alert(
-      'Reset all local data?',
-      'This deletes all habits, completions, skips, and app settings from this device. Historical completions will be removed. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset data',
-          style: 'destructive',
-          onPress: handleResetAllData,
-        },
-      ]
-    );
+    setResetConfirmVisible(true);
   }
 
   async function handleResetAllData() {
@@ -240,6 +225,7 @@ export default function SettingsScreen() {
       }
 
       await resetAllData();
+      setResetConfirmVisible(false);
       setMessage('All local habit data has been reset on this device.');
       await loadActivityData();
     } catch (error) {
@@ -379,6 +365,41 @@ export default function SettingsScreen() {
           />
         </View>
       </BottomSheetModal>
+
+      <ConfirmActionModal
+        confirmLabel={importing ? 'Replacing...' : 'Replace data'}
+        destructive
+        loading={importing}
+        message="This replaces all current local habit data on this device with the pasted import. Existing habits, completions, skips, reminders, and settings will be removed first."
+        onCancel={() => {
+          if (!importing) {
+            setImportConfirmVisible(false);
+            setPendingImportData(null);
+          }
+        }}
+        onConfirm={() => {
+          if (pendingImportData) {
+            void handleImportData(pendingImportData);
+          }
+        }}
+        title="Replace local data?"
+        visible={importConfirmVisible}
+      />
+
+      <ConfirmActionModal
+        confirmLabel={resetting ? 'Resetting...' : 'Reset'}
+        destructive
+        loading={resetting}
+        message="This removes all habits, progress, reminders, and settings from this device."
+        onCancel={() => {
+          if (!resetting) {
+            setResetConfirmVisible(false);
+          }
+        }}
+        onConfirm={handleResetAllData}
+        title="Reset all data?"
+        visible={resetConfirmVisible}
+      />
 
       <View style={styles.sectionCard}>
         <View style={styles.sectionHeader}>
