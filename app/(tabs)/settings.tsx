@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
-import { Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, Share, StyleSheet, Text, TextInput, View, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 
@@ -161,13 +161,14 @@ export default function SettingsScreen() {
       setImportErrorMessage(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not read that import.';
-
       setImportErrorMessage(message);
       return;
     }
 
     setPendingImportData(importedData);
+    setImportModalVisible(false); // close bottom sheet first
     setImportConfirmVisible(true);
+    console.log('importConfirmVisible set to true, pendingImportData:', !!importedData);
   }
 
   async function handleImportData(importedData: ImportedLocalData) {
@@ -237,134 +238,159 @@ export default function SettingsScreen() {
   }
 
   return (
-    <Screen contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <View style={styles.headerCopy}>
-          <Text style={styles.eyebrow}>App</Text>
-          <Text style={styles.title}>Settings</Text>
-          <Text style={styles.subtitle}>Manage local data and app info.</Text>
-        </View>
-        <View style={styles.headerPill}>
-          <Text style={styles.headerPillValue}>
-            {Math.round(todayActivity.completionRate * 100)}%
-          </Text>
-          <Text style={styles.headerPillLabel}>Today</Text>
-        </View>
-      </View>
-
-      {message ? (
-        <View style={styles.messageCard}>
-          <Text style={styles.message}>{message}</Text>
-        </View>
-      ) : null}
-
-      <View style={styles.sectionCard}>
-        <View style={styles.sectionHeader}>
-          <View>
-            <Text style={styles.sectionEyebrow}>Data</Text>
-            <Text style={styles.cardTitle}>Your data</Text>
+    <>
+      <Screen contentContainerStyle={styles.content}>
+        <View style={styles.header}>
+          <View style={styles.headerCopy}>
+            <Text style={styles.eyebrow}>App</Text>
+            <Text style={styles.title}>Settings</Text>
+            <Text style={styles.subtitle}>Manage local data and app info.</Text>
           </View>
-        </View>
-        <Text style={styles.bodyText}>
-          Your habits are saved on this phone. You can make a backup, restore a backup, or delete
-          everything.
-        </Text>
-        <Pressable
-          accessibilityLabel="Open archived habits"
-          accessibilityRole="button"
-          onPress={() => router.push('/archived-habits')}
-          style={({ pressed }) => [styles.dataLinkCard, pressed && styles.pressed]}>
-          <View style={styles.dataLinkIcon}>
-            <Text style={styles.dataLinkIconText}>↺</Text>
-          </View>
-          <View style={styles.dataLinkText}>
-            <Text style={styles.dataLinkTitle}>Archived habits</Text>
-            <Text style={styles.dataLinkSubtitle}>
-              Restore old habits.
+          <View style={styles.headerPill}>
+            <Text style={styles.headerPillValue}>
+              {Math.round(todayActivity.completionRate * 100)}%
             </Text>
+            <Text style={styles.headerPillLabel}>Today</Text>
           </View>
-          <View style={styles.dataLinkPill}>
-            <Text style={styles.dataLinkPillText}>
-              {archivedHabitCount === null
-                ? 'View'
-                : archivedHabitCount === 1
-                  ? '1 archived'
-                  : `${archivedHabitCount} archived`}
-            </Text>
-          </View>
-        </Pressable>
-        <View style={styles.actions}>
-          <PrimaryButton
-            disabled={exporting || importing || resetting}
-            onPress={handleExportData}
-            title={exporting ? 'Preparing backup...' : 'Back up data'}
-            variant="secondary"
-          />
-          <PrimaryButton
-            disabled={exporting || importing || resetting}
-            onPress={openImportModal}
-            title={importing ? 'Restoring...' : 'Restore backup'}
-            variant="secondary"
-          />
-          <PrimaryButton
-            disabled={exporting || importing || resetting}
-            onPress={confirmResetAllData}
-            title={resetting ? 'Deleting...' : 'Delete all data'}
-            variant="danger"
-          />
         </View>
-      </View>
 
-      <BottomSheetModal
-        onRequestClose={() => {
-          if (!importing) {
-            setImportModalVisible(false);
-          }
-        }}
-        sheetStyle={styles.importModalCard}
-        visible={importModalVisible}>
-        <View style={styles.sectionHeader}>
-          <View>
-            <Text style={styles.sectionEyebrow}>Restore</Text>
-            <Text style={styles.cardTitle}>Paste backup text</Text>
+        {message ? (
+          <View style={styles.messageCard}>
+            <Text style={styles.message}>{message}</Text>
           </View>
-        </View>
-        <Text style={styles.bodyText}>
-          This replaces the habits currently on this phone with the backup you paste here.
-        </Text>
-        <TextInput
-          accessibilityLabel="Paste backup text"
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={!importing}
-          multiline
-          onChangeText={(value) => {
-            setImportJsonText(value);
-            setImportErrorMessage(null);
-          }}
-          placeholder="Paste your backup text here"
-          placeholderTextColor={colors.textSubtle}
-          style={styles.importInput}
-          value={importJsonText}
-        />
-        {importErrorMessage ? (
-          <Text style={styles.importErrorText}>{importErrorMessage}</Text>
         ) : null}
-        <View style={styles.actions}>
-          <PrimaryButton
-            disabled={importing}
-            onPress={() => setImportModalVisible(false)}
-            title="Cancel"
-            variant="secondary"
-          />
-          <PrimaryButton
-            disabled={importing || importJsonText.trim().length === 0}
-            onPress={confirmImportData}
-            title={importing ? 'Importing...' : 'Import and replace'}
-            variant="danger"
-          />
+
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionEyebrow}>Data</Text>
+              <Text style={styles.cardTitle}>Your data</Text>
+            </View>
+          </View>
+          <Text style={styles.bodyText}>
+            Your habits are saved on this phone. You can make a backup, restore a backup, or delete
+            everything.
+          </Text>
+          <Pressable
+            accessibilityLabel="Open archived habits"
+            accessibilityRole="button"
+            onPress={() => router.push('/archived-habits')}
+            style={({ pressed }) => [styles.dataLinkCard, pressed && styles.pressed]}>
+            <View style={styles.dataLinkIcon}>
+              <Text style={styles.dataLinkIconText}>↺</Text>
+            </View>
+            <View style={styles.dataLinkText}>
+              <Text style={styles.dataLinkTitle}>Habit Archive</Text>
+              <Text style={styles.dataLinkSubtitle}>
+                Restore old habits.
+              </Text>
+            </View>
+            <View style={styles.dataLinkPill}>
+              <Text style={styles.dataLinkPillText}>
+                {archivedHabitCount === null
+                  ? 'View'
+                  : archivedHabitCount === 1
+                    ? '1 archived'
+                    : `${archivedHabitCount} archived`}
+              </Text>
+            </View>
+          </Pressable>
+          <View style={styles.actions}>
+            <PrimaryButton
+              disabled={exporting || importing || resetting}
+              onPress={handleExportData}
+              title={exporting ? 'Preparing backup...' : 'Back up data'}
+              variant="secondary"
+            />
+            <PrimaryButton
+              disabled={exporting || importing || resetting}
+              onPress={openImportModal}
+              title={importing ? 'Restoring...' : 'Restore backup'}
+              variant="secondary"
+            />
+            <PrimaryButton
+              disabled={exporting || importing || resetting}
+              onPress={confirmResetAllData}
+              title={resetting ? 'Deleting...' : 'Delete all data'}
+              variant="danger"
+            />
+          </View>
         </View>
-      </BottomSheetModal>
+
+        <BottomSheetModal
+          onRequestClose={() => {
+            if (!importing) {
+              setImportModalVisible(false);
+            }
+          }}
+          sheetStyle={styles.importModalCard}
+          visible={importModalVisible}>
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+            <View>
+              <View style={styles.sectionHeader}>
+                <View>
+                  <Text style={styles.sectionEyebrow}>Restore</Text>
+                  <Text style={styles.cardTitle}>Paste backup text</Text>
+                </View>
+              </View>
+              <Text style={styles.bodyText}>
+                This replaces the habits currently on this phone with the backup you paste here.
+              </Text>
+              <TextInput
+                accessibilityLabel="Paste backup text"
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!importing}
+                multiline
+                scrollEnabled
+                onChangeText={(value) => {
+                  setImportJsonText(value);
+                  setImportErrorMessage(null);
+                }}
+                placeholder="Paste your backup text here"
+                placeholderTextColor={colors.textSubtle}
+                style={styles.importInput}
+                value={importJsonText}
+              />
+              {importErrorMessage ? (
+                <Text style={styles.importErrorText}>{importErrorMessage}</Text>
+              ) : null}
+              <View style={styles.actions}>
+                <PrimaryButton
+                  disabled={importing}
+                  onPress={() => setImportModalVisible(false)}
+                  title="Cancel"
+                  variant="secondary"
+                />
+                <PrimaryButton
+                  disabled={importing || importJsonText.trim().length === 0}
+                  onPress={confirmImportData}
+                  title={importing ? 'Importing...' : 'Import and replace'}
+                  variant="danger"
+                />
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </BottomSheetModal>
+
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionEyebrow}>About</Text>
+              <Text style={styles.cardTitle}>About Habito</Text>
+            </View>
+          </View>
+          <Text style={styles.bodyText}>
+            Habito is a private, local-first habit tracker built to help you plan your day, track
+            progress, and stay consistent. Your habit data stays on this device unless you choose to
+            export it.
+          </Text>
+          <Text style={styles.aboutNote}>
+            Built for flexible routines, skips, subtasks, numeric goals, reminders, and visual
+            progress tracking.
+          </Text>
+        </View>
+      </Screen>
 
       <ConfirmActionModal
         confirmLabel={importing ? 'Replacing...' : 'Replace data'}
@@ -378,6 +404,7 @@ export default function SettingsScreen() {
           }
         }}
         onConfirm={() => {
+          console.log('onConfirm called, pendingImportData:', !!pendingImportData);
           if (pendingImportData) {
             void handleImportData(pendingImportData);
           }
@@ -400,25 +427,7 @@ export default function SettingsScreen() {
         title="Reset all data?"
         visible={resetConfirmVisible}
       />
-
-      <View style={styles.sectionCard}>
-        <View style={styles.sectionHeader}>
-          <View>
-            <Text style={styles.sectionEyebrow}>About</Text>
-            <Text style={styles.cardTitle}>About Habito</Text>
-          </View>
-        </View>
-        <Text style={styles.bodyText}>
-          Habito is a private, local-first habit tracker built to help you plan your day, track
-          progress, and stay consistent. Your habit data stays on this device unless you choose to
-          export it.
-        </Text>
-        <Text style={styles.aboutNote}>
-          Built for flexible routines, skips, subtasks, numeric goals, reminders, and visual
-          progress tracking.
-        </Text>
-      </View>
-    </Screen>
+    </>
   );
 }
 
@@ -580,7 +589,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   importInput: {
-    minHeight: 260,
+    height: 260,
     padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,

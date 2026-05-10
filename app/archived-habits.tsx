@@ -1,6 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { format } from 'date-fns';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { BottomSheetModal } from '@/src/components/BottomSheetModal';
@@ -27,18 +27,29 @@ export default function ArchivedHabitsScreen() {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [statsByHabitId, setStatsByHabitId] = useState<Record<string, ArchivedHabitStats>>({});
   const [deleteTarget, setDeleteTarget] = useState<Habit | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<Habit | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingHabitId, setSavingHabitId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const hasLoadedArchivedHabitsRef = useRef(false);
 
   const deleteTargetStats = useMemo(
     () => (deleteTarget ? statsByHabitId[deleteTarget.id] : null),
     [deleteTarget, statsByHabitId]
   );
+  const restoreTargetStats = useMemo(
+    () => (restoreTarget ? statsByHabitId[restoreTarget.id] : null),
+    [restoreTarget, statsByHabitId]
+  );
 
-  const loadArchivedHabits = useCallback(async () => {
-    setLoading(true);
+  const loadArchivedHabits = useCallback(async (options?: { showLoading?: boolean }) => {
+    const showLoading = options?.showLoading ?? !hasLoadedArchivedHabitsRef.current;
+
+    if (showLoading) {
+      setLoading(true);
+    }
+
     setErrorMessage(null);
     await initDatabase();
 
@@ -51,6 +62,7 @@ export default function ArchivedHabitsScreen() {
 
     setHabits(archivedHabits);
     setStatsByHabitId(createStatsByHabitId(archivedHabits, completions, skips, subtasks));
+    hasLoadedArchivedHabitsRef.current = true;
     setLoading(false);
   }, []);
 
@@ -59,14 +71,18 @@ export default function ArchivedHabitsScreen() {
       let isActive = true;
 
       async function setup() {
+        const shouldShowInitialLoading = !hasLoadedArchivedHabitsRef.current;
+
         try {
-          await loadArchivedHabits();
+          await loadArchivedHabits({ showLoading: shouldShowInitialLoading });
         } catch (error) {
           console.error('Failed to load archived habits', error);
 
           if (isActive) {
             setErrorMessage('Could not load archived habits.');
-            setLoading(false);
+            if (shouldShowInitialLoading) {
+              setLoading(false);
+            }
           }
         }
       }
@@ -79,13 +95,18 @@ export default function ArchivedHabitsScreen() {
     }, [loadArchivedHabits])
   );
 
-  async function handleRestore(habit: Habit) {
+  async function handleRestore() {
+    if (!restoreTarget) {
+      return;
+    }
+
     try {
-      setSavingHabitId(habit.id);
+      setSavingHabitId(restoreTarget.id);
       setMessage(null);
-      await restoreHabit(habit.id);
-      setHabits((current) => current.filter((item) => item.id !== habit.id));
-      setMessage(`Restored ${habit.name}. Reminders are off until you re-enable them.`);
+      await restoreHabit(restoreTarget.id);
+      setHabits((current) => current.filter((item) => item.id !== restoreTarget.id));
+      setRestoreTarget(null);
+      setMessage(`Restored ${restoreTarget.name}. Reminders are off until you re-enable them.`);
     } catch (error) {
       console.error('Failed to restore archived habit', error);
       setMessage('Could not restore that habit. Please try again.');
@@ -136,7 +157,11 @@ export default function ArchivedHabitsScreen() {
       {errorMessage ? (
         <View style={styles.errorBanner}>
           <Text style={styles.errorText}>{errorMessage}</Text>
-          <PrimaryButton onPress={loadArchivedHabits} title="Retry" variant="secondary" />
+          <PrimaryButton
+            onPress={() => loadArchivedHabits({ showLoading: true })}
+            title="Retry"
+            variant="secondary"
+          />
         </View>
       ) : null}
 
@@ -196,8 +221,8 @@ export default function ArchivedHabitsScreen() {
                 <View style={styles.cardActions}>
                   <PrimaryButton
                     disabled={busy}
-                    onPress={() => handleRestore(habit)}
-                    title={busy ? 'Restoring...' : 'Restore'}
+                    onPress={() => setRestoreTarget(habit)}
+                    title="Restore"
                   />
                   <PrimaryButton
                     disabled={busy}
@@ -233,13 +258,23 @@ export default function ArchivedHabitsScreen() {
         </View>
         {deleteTarget ? (
           <View style={styles.deletePreview}>
-            <Text numberOfLines={1} style={styles.deletePreviewName}>
-              {deleteTarget.name}
-            </Text>
-            <Text style={styles.deletePreviewMeta}>
-              {deleteTargetStats?.completions ?? 0} completions · {deleteTargetStats?.skips ?? 0}{' '}
-              skips
-            </Text>
+            <HabitIcon
+              color={deleteTarget.color ?? colors.habitGreen}
+              fallbackIcon={deleteTarget.icon}
+              iconLibrary={deleteTarget.iconLibrary}
+              iconType={deleteTarget.iconType}
+              iconValue={deleteTarget.iconValue}
+              size={44}
+            />
+            <View style={styles.deletePreviewText}>
+              <Text numberOfLines={1} style={styles.deletePreviewName}>
+                {deleteTarget.name}
+              </Text>
+              <Text style={styles.deletePreviewMeta}>
+                {deleteTargetStats?.completions ?? 0} completions ·{' '}
+                {deleteTargetStats?.skips ?? 0} skips
+              </Text>
+            </View>
           </View>
         ) : null}
         <View style={styles.cardActions}>
@@ -254,6 +289,61 @@ export default function ArchivedHabitsScreen() {
             onPress={handleDeleteForever}
             title={savingHabitId ? 'Deleting...' : 'Delete forever'}
             variant="danger"
+          />
+        </View>
+      </BottomSheetModal>
+
+      <BottomSheetModal
+        onRequestClose={() => {
+          if (!savingHabitId) {
+            setRestoreTarget(null);
+          }
+        }}
+        sheetStyle={styles.deleteSheet}
+        visible={Boolean(restoreTarget)}>
+        <View style={styles.deleteHeader}>
+          <View style={[styles.deleteIcon, styles.restoreIcon]}>
+            <Text style={[styles.deleteIconText, styles.restoreIconText]}>R</Text>
+          </View>
+          <View style={styles.deleteCopy}>
+            <Text style={styles.deleteTitle}>Restore habit?</Text>
+            <Text style={styles.deleteMessage}>
+              This makes the habit active again with its original history.
+            </Text>
+          </View>
+        </View>
+        {restoreTarget ? (
+          <View style={styles.deletePreview}>
+            <HabitIcon
+              color={restoreTarget.color ?? colors.habitGreen}
+              fallbackIcon={restoreTarget.icon}
+              iconLibrary={restoreTarget.iconLibrary}
+              iconType={restoreTarget.iconType}
+              iconValue={restoreTarget.iconValue}
+              size={44}
+            />
+            <View style={styles.deletePreviewText}>
+              <Text numberOfLines={1} style={styles.deletePreviewName}>
+                {restoreTarget.name}
+              </Text>
+              <Text style={styles.deletePreviewMeta}>
+                {restoreTargetStats?.completions ?? 0} completions ·{' '}
+                {restoreTargetStats?.skips ?? 0} skips
+              </Text>
+            </View>
+          </View>
+        ) : null}
+        <View style={styles.cardActions}>
+          <PrimaryButton
+            disabled={Boolean(savingHabitId)}
+            onPress={() => setRestoreTarget(null)}
+            title="Cancel"
+            variant="secondary"
+          />
+          <PrimaryButton
+            disabled={Boolean(savingHabitId)}
+            onPress={handleRestore}
+            title={savingHabitId ? 'Restoring...' : 'Restore'}
           />
         </View>
       </BottomSheetModal>
@@ -457,6 +547,12 @@ const styles = StyleSheet.create({
     ...typography.heading,
     fontWeight: '900',
   },
+  restoreIcon: {
+    borderColor: colors.primary,
+  },
+  restoreIconText: {
+    color: colors.primary,
+  },
   deleteCopy: {
     flex: 1,
     gap: spacing.xs,
@@ -470,12 +566,18 @@ const styles = StyleSheet.create({
     ...typography.body,
   },
   deletePreview: {
-    gap: spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
     padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.lg,
     backgroundColor: colors.surfaceElevated,
+  },
+  deletePreviewText: {
+    flex: 1,
+    gap: spacing.xs,
   },
   deletePreviewName: {
     color: colors.text,

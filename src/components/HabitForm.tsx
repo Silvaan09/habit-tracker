@@ -15,6 +15,7 @@ import { ThemedSwitch } from '@/src/components/ThemedSwitch';
 import { colors, radius, spacing, typography } from '@/src/theme';
 import type { HabitIconType, HabitScheduleType, HabitTrackingType } from '@/src/types/Habit';
 import { formatDisplayDateDDMMYYYY, getTodayDateString } from '@/src/utils/dates';
+import { DEFAULT_NUMERIC_STEP_VALUES, normalizeNumericStepValues } from '@/src/utils/numericSteps';
 import {
   isValidReminderTime,
   REMINDER_TIME_VALIDATION_MESSAGE,
@@ -39,6 +40,7 @@ export type HabitFormValues = {
   trackingType: HabitTrackingType;
   targetValue: number | null;
   targetUnit: string | null;
+  numericStepValues: number[] | null;
   subtaskTitles: string[];
 };
 
@@ -139,6 +141,9 @@ export function HabitForm({
     initialValues?.targetValue ? String(initialValues.targetValue) : ''
   );
   const [targetUnit, setTargetUnit] = useState(initialValues?.targetUnit ?? '');
+  const [numericStepValues, setNumericStepValues] = useState(() =>
+    normalizeNumericStepValues(initialValues?.numericStepValues).map(String)
+  );
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
   const [reminderTimeValidationMessage, setReminderTimeValidationMessage] = useState<string | null>(
     null
@@ -162,6 +167,7 @@ export function HabitForm({
         scheduleType,
         scheduleWeekdays,
         subtaskTitles,
+        numericStepValues,
         targetUnit,
         targetValue,
         trackingType,
@@ -181,6 +187,7 @@ export function HabitForm({
       selectedIcon.iconType,
       selectedIcon.iconValue,
       subtaskTitles,
+      numericStepValues,
       targetUnit,
       targetValue,
       trackingType,
@@ -246,6 +253,9 @@ export function HabitForm({
 
     const trimmedSubtaskTitles = subtaskTitles.map((title) => title.trim()).filter(Boolean);
     const parsedTargetValue = Number(targetValue.replace(',', '.'));
+    const parsedNumericStepValues = numericStepValues.map((value) =>
+      Number(value.replace(',', '.'))
+    );
 
     if (trackingType === 'subtasks' && trimmedSubtaskTitles.length === 0) {
       setTrackingValidationMessage('Add at least one subtask.');
@@ -254,6 +264,14 @@ export function HabitForm({
 
     if (trackingType === 'numeric' && (!Number.isFinite(parsedTargetValue) || parsedTargetValue <= 0)) {
       setTrackingValidationMessage('Target must be greater than 0.');
+      return;
+    }
+
+    if (
+      trackingType === 'numeric' &&
+      parsedNumericStepValues.some((value) => !Number.isFinite(value) || value === 0)
+    ) {
+      setTrackingValidationMessage('Quick buttons must be valid non-zero numbers.');
       return;
     }
 
@@ -280,6 +298,10 @@ export function HabitForm({
       trackingType,
       targetValue: trackingType === 'numeric' ? parsedTargetValue : null,
       targetUnit: trackingType === 'numeric' ? targetUnit.trim() || null : null,
+      numericStepValues:
+        trackingType === 'numeric'
+          ? normalizeNumericStepValues(parsedNumericStepValues)
+          : [...DEFAULT_NUMERIC_STEP_VALUES],
       subtaskTitles: trackingType === 'subtasks' ? trimmedSubtaskTitles : [],
     });
   }
@@ -320,6 +342,15 @@ export function HabitForm({
       setName(value);
       setValidationMessage(null);
     }
+  }
+
+  function updateNumericStepValue(index: number, value: string) {
+    setNumericStepValues((current) =>
+      current.map((stepValue, stepIndex) =>
+        stepIndex === index ? value.replace(/[^0-9.,+-]/g, '') : stepValue
+      )
+    );
+    setTrackingValidationMessage(null);
   }
 
   function addSubtaskTitle() {
@@ -569,31 +600,56 @@ export function HabitForm({
         ) : null}
 
         {trackingType === 'numeric' ? (
-          <View style={styles.intervalFields}>
-            <TextInputField
-              editable={!saving}
-              keyboardType="decimal-pad"
-              label="Target value"
-              onChangeText={(value) => {
-                setTargetValue(value.replace(/[^0-9.,]/g, ''));
-                setTrackingValidationMessage(null);
-              }}
-              placeholder="20"
-              value={targetValue}
-            />
-            <TextInputField
-              autoGrow
-              blurOnSubmit
-              editable={!saving}
-              helper="Optional. Examples: pages, liters, minutes."
-              label="Unit"
-              minInputHeight={44}
-              maxInputHeight={100}
-              onChangeText={setTargetUnit}
-              placeholder="pages"
-              returnKeyType="done"
-              value={targetUnit}
-            />
+          <View style={styles.fieldGroup}>
+            <View style={styles.intervalFields}>
+              <TextInputField
+                editable={!saving}
+                keyboardType="decimal-pad"
+                label="Target value"
+                onChangeText={(value) => {
+                  setTargetValue(value.replace(/[^0-9.,]/g, ''));
+                  setTrackingValidationMessage(null);
+                }}
+                placeholder="20"
+                value={targetValue}
+              />
+              <TextInputField
+                autoGrow
+                blurOnSubmit
+                editable={!saving}
+                helper="Optional. Examples: pages, liters, minutes."
+                label="Unit"
+                minInputHeight={44}
+                maxInputHeight={100}
+                onChangeText={setTargetUnit}
+                placeholder="pages"
+                returnKeyType="done"
+                value={targetUnit}
+              />
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>Quick buttons</Text>
+              <Text style={styles.helperText}>Set the four progress buttons shown on habit cards.</Text>
+              <View style={styles.numericStepEditorRow}>
+                {numericStepValues.map((stepValue, index) => (
+                  <View key={index} style={styles.numericStepInputWrap}>
+                    <Text style={[styles.label, { textAlign: 'center' }]}>{`Button ${index + 1}`}</Text>
+                    <View style={{ marginTop: -22 }}>
+                      <TextInputField
+                        editable={!saving}
+                        keyboardType="numbers-and-punctuation"
+                        label=""
+                        onChangeText={(value) => updateNumericStepValue(index, value)}
+                        placeholder={String(DEFAULT_NUMERIC_STEP_VALUES[index])}
+                        value={stepValue}
+                        style={{ textAlign: 'center' }}
+                      />
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
           </View>
         ) : null}
 
@@ -1166,6 +1222,14 @@ const styles = StyleSheet.create({
   },
   intervalFields: {
     gap: spacing.lg,
+  },
+  numericStepEditorRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  numericStepInputWrap: {
+    flex: 1,
+    minWidth: 0,
   },
   datePickerButton: {
     minHeight: 52,

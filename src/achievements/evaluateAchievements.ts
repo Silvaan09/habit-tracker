@@ -5,11 +5,6 @@ import {
   type AchievementDefinition,
   type EvaluatedAchievement,
 } from '@/src/achievements/achievementDefinitions';
-import { getAllCompletions } from '@/src/db/completions';
-import { getAllHabits } from '@/src/db/habits';
-import { getAllNumericEntries } from '@/src/db/numericEntries';
-import { getAllSkips } from '@/src/db/skips';
-import { getAllSubtaskCompletions, getAllSubtasks } from '@/src/db/subtasks';
 import type {
   Habit,
   HabitCompletion,
@@ -64,10 +59,23 @@ type AchievementMetrics = {
   notDoneYet: number;
   backInRhythm: number;
   recoveredStreak: number;
-  trackedSpanDays: number;
+  trackedActivityDays: number;
 };
 
 export async function loadAchievementData(): Promise<AchievementEvaluationData> {
+  const [
+    { getAllCompletions },
+    { getAllHabits },
+    { getAllNumericEntries },
+    { getAllSkips },
+    { getAllSubtaskCompletions, getAllSubtasks },
+  ] = await Promise.all([
+    import('@/src/db/completions'),
+    import('@/src/db/habits'),
+    import('@/src/db/numericEntries'),
+    import('@/src/db/skips'),
+    import('@/src/db/subtasks'),
+  ]);
   const [habits, completions, skips, subtasks, subtaskCompletions, numericEntries] =
     await Promise.all([
       getAllHabits(),
@@ -178,7 +186,7 @@ function getMetricForDefinition(
     case 'track_90_days':
     case 'track_180_days':
     case 'track_365_days':
-      return metrics.trackedSpanDays;
+      return metrics.trackedActivityDays;
     default:
       break;
   }
@@ -192,7 +200,7 @@ function getMetricForDefinition(
   }
 
   if (definition.category === 'full_day_streaks') {
-    return definition.id === 'perfect_run_1'
+    return definition.id === 'perfect_run_1' || definition.id === 'perfect_run_3'
       ? metrics.perfectDayCount
       : metrics.longestPerfectRun;
   }
@@ -204,8 +212,9 @@ function calculateAchievementMetrics(data: AchievementEvaluationData): Achieveme
   const completions = data.completions.filter((completion) => completion.date <= data.today);
   const skips = data.skips.filter((skip) => skip.date <= data.today);
   const numericEntries = data.numericEntries.filter((entry) => entry.date <= data.today);
+  const knownSubtaskIds = new Set(data.subtasks.map((subtask) => subtask.id));
   const subtaskCompletions = data.subtaskCompletions.filter(
-    (completion) => completion.date <= data.today
+    (completion) => completion.date <= data.today && knownSubtaskIds.has(completion.subtaskId)
   );
   const completionsByHabit = groupDatesByHabit(completions);
   const skipsByHabit = groupDatesByHabit(skips);
@@ -260,7 +269,7 @@ function calculateAchievementMetrics(data: AchievementEvaluationData): Achieveme
     skipReasons: skips.filter((skip) => skip.reason.trim().length > 0).length,
     totalCompletions: completions.length,
     totalSubtaskCompletions: subtaskCompletions.length,
-    trackedSpanDays: getTrackedSpanDays(data, firstDate),
+    trackedActivityDays: getTrackedActivityDayCount(data),
   };
 }
 
@@ -274,7 +283,7 @@ function getNumericMetrics(habits: Habit[], numericEntries: HabitNumericEntry[])
     const habit = habitById.get(entry.habitId);
     const target = habit?.targetValue;
 
-    if (!target || target <= 0) {
+    if (habit?.trackingType !== 'numeric' || !target || target <= 0) {
       continue;
     }
 
@@ -547,12 +556,21 @@ function getFirstTrackedDate(data: AchievementEvaluationData, activeHabits: Habi
   return dates.sort()[0] ?? null;
 }
 
-function getTrackedSpanDays(data: AchievementEvaluationData, firstDate: string | null) {
-  if (!firstDate) {
-    return 0;
+function getTrackedActivityDayCount(data: AchievementEvaluationData) {
+  const trackedDates = new Set<string>();
+
+  for (const item of [
+    ...data.completions,
+    ...data.skips,
+    ...data.numericEntries,
+    ...data.subtaskCompletions,
+  ]) {
+    if (isDateString(item.date) && item.date <= data.today) {
+      trackedDates.add(item.date);
+    }
   }
 
-  return differenceInCalendarDays(parseDateString(data.today), parseDateString(firstDate)) + 1;
+  return trackedDates.size;
 }
 
 function toDayStatsHabits(

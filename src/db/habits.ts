@@ -7,6 +7,7 @@ import type {
   HabitTrackingType,
 } from '@/src/types/Habit';
 import { getTodayDateString } from '@/src/utils/dates';
+import { parseNumericStepValues, serializeNumericStepValues } from '@/src/utils/numericSteps';
 
 type HabitRow = {
   id: string;
@@ -29,6 +30,7 @@ type HabitRow = {
   tracking_type: string | null;
   target_value: number | null;
   target_unit: string | null;
+  numeric_step_values: string | null;
   today_layout_size: string | null;
   today_layout_order: number | null;
   archived: number;
@@ -56,6 +58,7 @@ export type CreateHabitInput = {
   trackingType?: HabitTrackingType;
   targetValue?: number | null;
   targetUnit?: string | null;
+  numericStepValues?: number[] | null;
   todayLayoutSize?: HabitCardLayoutSize;
   todayLayoutOrder?: number;
 };
@@ -92,6 +95,7 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
     trackingType: input.trackingType ?? 'checkbox',
     targetValue: normalizeTargetValue(input.targetValue),
     targetUnit: input.targetUnit?.trim() || null,
+    numericStepValues: parseNumericStepValues(serializeNumericStepValues(input.numericStepValues)),
     todayLayoutSize: normalizeTodayLayoutSize(input.todayLayoutSize),
     todayLayoutOrder: normalizeTodayLayoutOrder(input.todayLayoutOrder),
     archived: false,
@@ -121,12 +125,13 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
       tracking_type,
       target_value,
       target_unit,
+      numeric_step_values,
       today_layout_size,
       today_layout_order,
       archived,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       habit.id,
       habit.name,
@@ -148,6 +153,7 @@ export async function createHabit(input: CreateHabitInput): Promise<Habit> {
       habit.trackingType,
       habit.targetValue,
       habit.targetUnit,
+      serializeNumericStepValues(habit.numericStepValues),
       habit.todayLayoutSize,
       habit.todayLayoutOrder,
       habit.archived ? 1 : 0,
@@ -183,6 +189,7 @@ export async function getActiveHabits(): Promise<Habit[]> {
       tracking_type,
       target_value,
       target_unit,
+      numeric_step_values,
       today_layout_size,
       today_layout_order,
       archived,
@@ -220,6 +227,7 @@ export async function getAllHabits(): Promise<Habit[]> {
       tracking_type,
       target_value,
       target_unit,
+      numeric_step_values,
       today_layout_size,
       today_layout_order,
       archived,
@@ -256,6 +264,7 @@ export async function getArchivedHabits(): Promise<Habit[]> {
       tracking_type,
       target_value,
       target_unit,
+      numeric_step_values,
       today_layout_size,
       today_layout_order,
       archived,
@@ -302,6 +311,7 @@ export async function getHabitById(id: string): Promise<Habit | null> {
       tracking_type,
       target_value,
       target_unit,
+      numeric_step_values,
       today_layout_size,
       today_layout_order,
       archived,
@@ -420,6 +430,11 @@ export async function updateHabit(id: string, input: UpdateHabitInput): Promise<
   if (input.targetUnit !== undefined) {
     updates.push('target_unit = ?');
     params.push(input.targetUnit?.trim() || null);
+  }
+
+  if (input.numericStepValues !== undefined) {
+    updates.push('numeric_step_values = ?');
+    params.push(serializeNumericStepValues(input.numericStepValues));
   }
 
   if (input.todayLayoutSize !== undefined) {
@@ -572,6 +587,7 @@ function mapHabitRow(row: HabitRow): Habit {
     trackingType: normalizeTrackingType(row.tracking_type),
     targetValue: normalizeTargetValue(row.target_value),
     targetUnit: row.target_unit,
+    numericStepValues: parseNumericStepValues(row.numeric_step_values),
     todayLayoutSize: normalizeTodayLayoutSize(row.today_layout_size),
     todayLayoutOrder: normalizeTodayLayoutOrder(row.today_layout_order),
     archived: Boolean(row.archived),

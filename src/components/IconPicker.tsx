@@ -4,9 +4,10 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { BottomSheetModal } from '@/src/components/BottomSheetModal';
 import { HabitIcon } from '@/src/components/HabitIcon';
 import {
+  LUCIDE_HABIT_ICON_CATEGORIES,
   LUCIDE_HABIT_ICON_OPTIONS,
+  LucideChevronDown,
   LucideCheck,
-  LucideX,
   type LucideHabitIconOption,
 } from '@/src/components/lucideHabitIcons';
 import { colors, radius, spacing, typography } from '@/src/theme';
@@ -25,8 +26,6 @@ type IconPickerProps = {
   onClose: () => void;
 };
 
-const CATEGORIES: LucideHabitIconOption['category'][] = ['Health', 'Learning', 'Lifestyle'];
-
 export function IconPicker({
   visible,
   selected,
@@ -42,7 +41,7 @@ export function IconPicker({
     }
 
     return LUCIDE_HABIT_ICON_OPTIONS.filter((option) =>
-      `${option.label} ${option.category} ${option.keywords}`
+      `${option.label} ${option.name} ${option.category} ${option.categories.join(' ')} ${option.keywords.join(' ')}`
         .toLowerCase()
         .includes(normalizedSearch)
     );
@@ -68,14 +67,14 @@ export function IconPicker({
           accessibilityRole="button"
           onPress={onClose}
           style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}>
-          <LucideX size={22} color={colors.text} />
+          <LucideChevronDown size={22} color={colors.text} />
         </Pressable>
       </View>
 
       <TextInput
         accessibilityLabel="Search icons"
         onChangeText={setSearch}
-        placeholder="Search health, study, water..."
+        placeholder="Search health, study, money..."
         placeholderTextColor={colors.textSubtle}
         style={styles.searchInput}
         value={search}
@@ -93,12 +92,12 @@ export function IconPicker({
             selected={selected}
           />
         ) : (
-          CATEGORIES.map((category) => (
+          LUCIDE_HABIT_ICON_CATEGORIES.map((category) => (
             <View key={category} style={styles.categorySection}>
               <Text style={styles.categoryTitle}>{category}</Text>
               <IconGrid
                 accentColor={accentColor}
-                icons={filteredIcons.filter((option) => option.category === category)}
+                icons={filteredIcons.filter((option) => option.categories.includes(category))}
                 onSelect={chooseIcon}
                 selected={selected}
               />

@@ -23,6 +23,7 @@ import {
   Animated,
   AppState,
   DeviceEventEmitter,
+  Easing,
   GestureResponderEvent,
   Keyboard,
   Modal,
@@ -89,6 +90,7 @@ import {
   isFutureDate,
 } from '@/src/utils/dates';
 import { TODAY_TAB_RESELECT_EVENT } from '@/src/utils/navigation';
+import { normalizeNumericStepValues } from '@/src/utils/numericSteps';
 import { getScheduledHabitsForDate } from '@/src/utils/schedule';
 import {
   calculateScheduleAwareCurrentStreak,
@@ -152,6 +154,12 @@ type LayoutDragTouchOffset = {
 type LayoutDragPointer = {
   x: number;
   y: number;
+};
+
+type LayoutDragReleaseAnimation = {
+  x: number;
+  y: number;
+  onComplete: () => void;
 };
 
 const GRID_GAP = spacing.md;
@@ -1195,14 +1203,17 @@ export default function TodayScreen() {
     todayScrollRef.current?.scrollTo({ y: nextScrollY, animated: false });
   }
 
-  function stopLayoutDragAutoScroll() {
+  function stopLayoutDragAutoScroll(resetScrollCompensation = true) {
     if (layoutDragAutoScrollFrameRef.current !== null) {
       cancelAnimationFrame(layoutDragAutoScrollFrameRef.current);
       layoutDragAutoScrollFrameRef.current = null;
     }
 
     layoutDragPointerYRef.current = null;
-    layoutDragScrollDeltaY.setValue(0);
+
+    if (resetScrollCompensation) {
+      layoutDragScrollDeltaY.setValue(0);
+    }
   }
 
   function startLayoutDragAutoScroll() {
@@ -1257,37 +1268,49 @@ export default function TodayScreen() {
     setLayoutDropPreview(null);
   }
 
-  async function handleLayoutDragEnd(
+  function handleLayoutDragEnd(
     habitId: string,
     dx: number,
     dy: number,
     touchOffset: LayoutDragTouchOffset,
     pointer: LayoutDragPointer
-  ) {
-    stopLayoutDragAutoScroll();
+  ): LayoutDragReleaseAnimation {
+    stopLayoutDragAutoScroll(false);
+    const currentScrollDeltaY = todayScrollYRef.current - layoutDragStartScrollYRef.current;
     const dropTarget = getLayoutDragDropTarget(
       habitId,
       dx,
       dy,
       touchOffset,
       getLayoutDragGridPointer(pointer, layoutDragGridOriginRef.current),
-      todayScrollYRef.current - layoutDragStartScrollYRef.current,
+      currentScrollDeltaY,
       todayGridLayout,
       todayGridMetrics,
       orderedScheduledHabits
     );
 
-    setLayoutDraggingHabitId(null);
     setLayoutDropPreview(null);
 
+    const draggedPlacement = todayGridLayout.placements.find(
+      (placement) => placement.item.habit.id === habitId
+    );
+    const releaseToOrigin = (): LayoutDragReleaseAnimation => ({
+      x: 0,
+      y: -currentScrollDeltaY,
+      onComplete: () => {
+        layoutDragScrollDeltaY.setValue(0);
+        setLayoutDraggingHabitId(null);
+      },
+    });
+
     if (!dropTarget) {
-      return;
+      return releaseToOrigin();
     }
 
     const sourceIndex = orderedScheduledHabits.findIndex((habit) => habit.id === habitId);
 
     if (sourceIndex === -1 || sourceIndex === dropTarget.dropIndex) {
-      return;
+      return releaseToOrigin();
     }
 
     const reorderedScheduledHabits = reorderHabitList(
@@ -1295,8 +1318,27 @@ export default function TodayScreen() {
       sourceIndex,
       dropTarget.dropIndex
     );
+    const nextLayout = buildTodayGridLayout(buildTodayGridItems(reorderedScheduledHabits));
+    const targetPlacement = nextLayout.placements.find(
+      (placement) => placement.item.habit.id === habitId
+    );
 
-    await saveLayoutHabitOrder(habitId, reorderedScheduledHabits);
+    if (!draggedPlacement || !targetPlacement) {
+      return releaseToOrigin();
+    }
+
+    const draggedBounds = getGridPlacementBounds(draggedPlacement, todayGridMetrics);
+    const targetBounds = getGridPlacementBounds(targetPlacement, todayGridMetrics);
+
+    return {
+      x: targetBounds.left - draggedBounds.left,
+      y: targetBounds.top - draggedBounds.top - currentScrollDeltaY,
+      onComplete: () => {
+        layoutDragScrollDeltaY.setValue(0);
+        void saveLayoutHabitOrder(habitId, reorderedScheduledHabits);
+        setLayoutDraggingHabitId(null);
+      },
+    };
   }
 
   async function saveLayoutHabitOrder(draggedHabitId: string, reorderedScheduledHabits: Habit[]) {
@@ -1704,10 +1746,10 @@ export default function TodayScreen() {
                       value={editorNumericValue}
                     />
                     <View style={styles.numericQuickActions}>
-                      {[-1, 1, 10, 25].map((delta) => {
+                      {getHabitNumericStepValues(progressEditorHabit).map((delta, index) => {
                         const tone = getNumericQuickButtonTone(
                           progressEditorHabit.color ?? colors.primary,
-                          delta
+                          index
                         );
 
                         return (
@@ -1715,7 +1757,7 @@ export default function TodayScreen() {
                             accessibilityLabel={`${delta > 0 ? 'Increase' : 'Decrease'} progress by ${Math.abs(delta)}`}
                             accessibilityRole="button"
                             disabled={savingProgress}
-                            key={delta}
+                            key={`${index}-${delta}`}
                             onPress={() => adjustEditorNumericProgress(delta)}
                             style={({ pressed }) => [
                               styles.numericStepButton,
@@ -1727,7 +1769,7 @@ export default function TodayScreen() {
                               savingProgress && styles.controlDisabled,
                             ]}>
                             <Text style={[styles.numericStepText, { color: tone.textColor }]}>
-                              {delta > 0 ? `+${delta}` : delta}
+                              {formatNumericStepLabel(delta)}
                             </Text>
                           </Pressable>
                         );
@@ -2293,7 +2335,7 @@ type DraggableHabitCardProps = {
     dy: number,
     touchOffset: LayoutDragTouchOffset,
     pointer: LayoutDragPointer
-  ) => void;
+  ) => LayoutDragReleaseAnimation;
   onDragMove: (
     dx: number,
     dy: number,
@@ -2347,8 +2389,32 @@ function DraggableHabitCard({
       useNativeDriver: true,
     }).start();
   }, [pan]);
+  const animatePanTo = useCallback(
+    (target: { x: number; y: number }, onComplete: () => void) => {
+      Animated.timing(pan, {
+        toValue: target,
+        duration: 190,
+        easing: Easing.out(Easing.poly(2.5)),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) {
+          pan.setValue({ x: 0, y: 0 });
+          onComplete();
+        }
+      });
+    },
+    [pan]
+  );
 
   useEffect(() => resetDragHold, [resetDragHold]);
+
+  useEffect(() => {
+    if (!enabled) {
+      pan.stopAnimation();
+      pan.setValue({ x: 0, y: 0 });
+      scrollDeltaY.setValue(0);
+    }
+  }, [enabled, pan, scrollDeltaY]);
 
   const panResponder = useMemo(
     () =>
@@ -2407,13 +2473,16 @@ function DraggableHabitCard({
         onPanResponderRelease: (_, gestureState) => {
           dragStartedRef.current = false;
           resetDragHold();
-          onDragEnd(
+          const releaseAnimation = onDragEnd(
             gestureState.dx,
             gestureState.dy,
             dragTouchOffsetRef.current,
             dragPointerRef.current
           );
-          resetPan();
+          animatePanTo(
+            { x: releaseAnimation.x, y: releaseAnimation.y },
+            releaseAnimation.onComplete
+          );
         },
         onPanResponderTerminate: () => {
           dragStartedRef.current = false;
@@ -2432,6 +2501,7 @@ function DraggableHabitCard({
       onDragEnd,
       onDragMove,
       onDragStart,
+      animatePanTo,
       pan,
       resetDragHold,
       resetPan,
@@ -2441,7 +2511,8 @@ function DraggableHabitCard({
     inputRange: [0, 1],
     outputRange: [1, 1.07],
   });
-  const translateY = dragging ? Animated.add(pan.y, scrollDeltaY) : pan.y;
+  const translateX = enabled ? pan.x : 0;
+  const translateY = enabled ? (dragging ? Animated.add(pan.y, scrollDeltaY) : pan.y) : 0;
 
   return (
     <Animated.View
@@ -2454,7 +2525,7 @@ function DraggableHabitCard({
         holdReady && styles.dragHoldReadyHabitCard,
         {
           transform: [
-            { translateX: pan.x },
+            { translateX },
             { translateY },
             { scale },
           ],
@@ -2922,20 +2993,17 @@ function TodayHabitCard({
           ) : null}
         </Pressable>
         <View style={styles.tallNumericActions}>
-          {[
-            [-1, 1],
-            [10, 25],
-          ].map((row) => (
-            <View key={row.join('-')} style={styles.tallNumericActionRow}>
-              {row.map((delta) => {
-                const tone = getNumericQuickButtonTone(accentColor, delta);
+          {chunkNumericStepValues(getHabitNumericStepValues(habit), 2).map((row, rowIndex) => (
+            <View key={`${rowIndex}-${row.join('-')}`} style={styles.tallNumericActionRow}>
+              {row.map((delta, index) => {
+                const tone = getNumericQuickButtonTone(accentColor, rowIndex * 2 + index);
 
                 return (
                   <Pressable
                     accessibilityLabel={`${delta > 0 ? 'Increase' : 'Decrease'} ${habit.name} progress by ${Math.abs(delta)}`}
                     accessibilityRole="button"
                     disabled={updateDisabled}
-                    key={delta}
+                    key={`${rowIndex}-${index}-${delta}`}
                     onPress={(event) => handleInlineNumericAdjust(delta, event)}
                     style={({ pressed }) => [
                       styles.tallNumericStepButton,
@@ -2947,7 +3015,7 @@ function TodayHabitCard({
                       updateDisabled && styles.controlDisabled,
                     ]}>
                     <Text style={[styles.tallNumericStepText, { color: tone.textColor }]}>
-                      {delta > 0 ? `+${delta}` : delta}
+                      {formatNumericStepLabel(delta)}
                     </Text>
                   </Pressable>
                 );
@@ -3312,15 +3380,15 @@ function TodayHabitCard({
           ) : null}
         </Pressable>
         <View style={styles.largeNumericActions}>
-          {[-1, 1, 10, 25].map((delta) => {
-            const tone = getNumericQuickButtonTone(accentColor, delta);
+          {getHabitNumericStepValues(habit).map((delta, index) => {
+            const tone = getNumericQuickButtonTone(accentColor, index);
 
             return (
               <Pressable
                 accessibilityLabel={`${delta > 0 ? 'Increase' : 'Decrease'} ${habit.name} progress by ${Math.abs(delta)}`}
                 accessibilityRole="button"
                 disabled={updateDisabled}
-                key={delta}
+                key={`${index}-${delta}`}
                 onPress={(event) => handleInlineNumericAdjust(delta, event)}
                 style={({ pressed }) => [
                   styles.largeNumericStepButton,
@@ -3332,7 +3400,7 @@ function TodayHabitCard({
                   updateDisabled && styles.controlDisabled,
                 ]}>
                 <Text style={[styles.largeNumericStepText, { color: tone.textColor }]}>
-                  {delta > 0 ? `+${delta}` : delta}
+                  {formatNumericStepLabel(delta)}
                 </Text>
               </Pressable>
             );
@@ -3571,8 +3639,28 @@ function getWideProgressLabel(label: string, trackingType: Habit['trackingType']
   return `${current.trim()} of ${rest.trim()}`;
 }
 
-function getNumericQuickButtonTone(accentColor: string, delta: number) {
-  if (delta < 0) {
+function getHabitNumericStepValues(habit: Habit) {
+  return normalizeNumericStepValues(habit.numericStepValues);
+}
+
+function chunkNumericStepValues(values: number[], size: number) {
+  const chunks: number[][] = [];
+
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+
+  return chunks;
+}
+
+function formatNumericStepLabel(delta: number) {
+  const formattedValue = formatProgressNumber(Math.abs(delta));
+
+  return delta > 0 ? `+${formattedValue}` : `-${formattedValue}`;
+}
+
+function getNumericQuickButtonTone(accentColor: string, toneIndex: number) {
+  if (toneIndex === 0) {
     return {
       backgroundColor: colors.surface,
       borderColor: `${accentColor}66`,
@@ -3580,7 +3668,7 @@ function getNumericQuickButtonTone(accentColor: string, delta: number) {
     };
   }
 
-  if (delta === 1) {
+  if (toneIndex === 1) {
     return {
       backgroundColor: `${accentColor}22`,
       borderColor: `${accentColor}66`,
@@ -3588,7 +3676,7 @@ function getNumericQuickButtonTone(accentColor: string, delta: number) {
     };
   }
 
-  if (delta === 10) {
+  if (toneIndex === 2) {
     return {
       backgroundColor: `${accentColor}44`,
       borderColor: `${accentColor}99`,

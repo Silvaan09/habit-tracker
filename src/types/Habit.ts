@@ -24,6 +24,7 @@ export type Habit = {
   trackingType: HabitTrackingType;
   targetValue: number | null;
   targetUnit: string | null;
+  numericStepValues: number[] | null;
   todayLayoutSize: HabitCardLayoutSize;
   todayLayoutOrder: number;
   archived: boolean;

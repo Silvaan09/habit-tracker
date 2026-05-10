@@ -1,5 +1,5 @@
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import {
@@ -36,9 +36,15 @@ export default function AchievementsScreen() {
   const [selectedCategory, setSelectedCategory] = useState<CategoryFilter>('all');
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const hasLoadedAchievementsRef = useRef(false);
 
-  const loadAchievements = useCallback(async () => {
-    setLoading(true);
+  const loadAchievements = useCallback(async (options?: { showLoading?: boolean }) => {
+    const showLoading = options?.showLoading ?? !hasLoadedAchievementsRef.current;
+
+    if (showLoading) {
+      setLoading(true);
+    }
+
     setErrorMessage(null);
     await initDatabase();
 
@@ -47,6 +53,7 @@ export default function AchievementsScreen() {
 
     setAchievements(nextAchievements);
     setSummary(getAchievementSummary(nextAchievements));
+    hasLoadedAchievementsRef.current = true;
     setLoading(false);
   }, []);
 
@@ -55,14 +62,18 @@ export default function AchievementsScreen() {
       let isActive = true;
 
       async function setup() {
+        const shouldShowInitialLoading = !hasLoadedAchievementsRef.current;
+
         try {
-          await loadAchievements();
+          await loadAchievements({ showLoading: shouldShowInitialLoading });
         } catch (error) {
           console.error('Failed to load achievements', error);
 
           if (isActive) {
             setErrorMessage('Could not load achievements.');
-            setLoading(false);
+            if (shouldShowInitialLoading) {
+              setLoading(false);
+            }
           }
         }
       }
@@ -109,7 +120,11 @@ export default function AchievementsScreen() {
       {errorMessage ? (
         <View style={styles.errorBanner}>
           <Text style={styles.errorText}>{errorMessage}</Text>
-          <PrimaryButton onPress={loadAchievements} title="Retry" variant="secondary" />
+          <PrimaryButton
+            onPress={() => loadAchievements({ showLoading: true })}
+            title="Retry"
+            variant="secondary"
+          />
         </View>
       ) : null}
 

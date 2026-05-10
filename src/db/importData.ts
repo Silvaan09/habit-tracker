@@ -11,6 +11,7 @@ import type {
   HabitSubtaskCompletion,
   HabitTrackingType,
 } from '@/src/types/Habit';
+import { normalizeNumericStepValues } from '@/src/utils/numericSteps';
 
 type ImportedSetting = {
   key: string;
@@ -123,12 +124,13 @@ export async function replaceAllDataWithImportedData(data: ImportedLocalData): P
           tracking_type,
           target_value,
           target_unit,
+          numeric_step_values,
           today_layout_size,
           today_layout_order,
           archived,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         [
           habit.id,
           habit.name,
@@ -150,6 +152,7 @@ export async function replaceAllDataWithImportedData(data: ImportedLocalData): P
           habit.trackingType,
           habit.targetValue,
           habit.targetUnit,
+          habit.numericStepValues ? JSON.stringify(habit.numericStepValues) : null,
           habit.todayLayoutSize,
           habit.todayLayoutOrder,
           habit.archived ? 1 : 0,
@@ -270,6 +273,7 @@ function parseHabit(value: unknown): Habit {
     trackingType: parseTrackingType(row.trackingType),
     targetValue: optionalPositiveNumber(row.targetValue),
     targetUnit: optionalString(row.targetUnit),
+    numericStepValues: parseNumericStepValuesFromImport(row.numericStepValues),
     todayLayoutSize: parseTodayLayoutSize(row.todayLayoutSize),
     todayLayoutOrder: optionalInteger(row.todayLayoutOrder),
     archived: optionalBoolean(row.archived),
@@ -453,6 +457,10 @@ function optionalInteger(value: unknown): number {
 
 function optionalPositiveNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function parseNumericStepValuesFromImport(value: unknown): number[] {
+  return normalizeNumericStepValues(value);
 }
 
 function optionalDateString(value: unknown): string | null {
