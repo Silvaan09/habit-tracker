@@ -8,10 +8,16 @@ export function isHabitScheduledForDate(habit: Habit, date: string): boolean {
   }
 
   if (habit.scheduleType === 'weekdays') {
-    const weekdays = habit.scheduleWeekdays ?? [];
+  const weekdays = habit.scheduleWeekdays ?? [];
 
-    return weekdays.includes(getWeekdayNumber(date));
+  // If no weekdays configured, treat as scheduled every day
+  // rather than silently hiding the habit forever
+  if (weekdays.length === 0) {
+    return true;
   }
+
+  return weekdays.includes(getWeekdayNumber(date));
+}
 
   if (habit.scheduleType === 'cycle' || habit.scheduleType === 'interval') {
     const onDays = habit.scheduleOnDays ?? 1;

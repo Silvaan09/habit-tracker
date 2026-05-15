@@ -44,6 +44,11 @@ import Svg, { Circle } from 'react-native-svg';
 
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { EmptyState } from '@/src/components/EmptyState';
+import {
+  evaluateAchievements,
+  loadAchievementData,
+} from '@/src/achievements/evaluateAchievements';
+import type { EvaluatedAchievement } from '@/src/achievements/achievementDefinitions';
 import { BottomSheetModal } from '@/src/components/BottomSheetModal';
 import { HabitCrownBadge } from '@/src/components/HabitCrownBadge';
 import { HabitHistoryMiniRow } from '@/src/components/HabitHistoryMiniRow';
@@ -122,6 +127,12 @@ type CrownToastState = {
   tier: HabitCrownTier;
 };
 
+type AchievementToastState = {
+  id: string;
+  title: string;
+  body: string;
+};
+
 type TodayGridItem = {
   habit: Habit;
   variant: HabitCardVariant;
@@ -169,6 +180,7 @@ const LAYOUT_DRAG_HOLD_DELAY_MS = 200;
 const LAYOUT_DRAG_EDGE_SCROLL_THRESHOLD = 104;
 const LAYOUT_DRAG_EDGE_SCROLL_MAX_STEP = 20;
 const CROWN_EARNED_SETTING_PREFIX = 'crown-earned';
+const ACHIEVEMENT_EARNED_SETTING_PREFIX = 'achievement-earned';
 const CROWN_TIER_RANK: Record<HabitCrownTier, number> = {
   none: 0,
   bronze: 1,
@@ -252,6 +264,8 @@ export default function TodayScreen() {
   const [numericClosePromptVisible, setNumericClosePromptVisible] = useState(false);
   const [savingProgress, setSavingProgress] = useState(false);
   const [crownToast, setCrownToast] = useState<CrownToastState | null>(null);
+  const [achievementToast, setAchievementToast] = useState<AchievementToastState | null>(null);
+  const hasSeededAchievementToastSettingsRef = useRef(false);
 
   useEffect(
     () => () => {
@@ -309,6 +323,62 @@ export default function TodayScreen() {
     []
   );
 
+  const getAchievementEarnedSettingKey = useCallback(
+    (achievementId: string) => `${ACHIEVEMENT_EARNED_SETTING_PREFIX}:${achievementId}`,
+    []
+  );
+
+  const getUnlockedSupportedAchievements = useCallback(async () => {
+    const achievementData = await loadAchievementData();
+
+    return evaluateAchievements(achievementData).filter(
+      (achievement) => achievement.unlocked && !achievement.unsupported
+    );
+  }, []);
+
+  const seedUnlockedAchievementsAsSeen = useCallback(async () => {
+    const unlockedAchievements = await getUnlockedSupportedAchievements();
+
+    await Promise.all(
+      unlockedAchievements.map((achievement) =>
+        setSettingValue(getAchievementEarnedSettingKey(achievement.id), '1')
+      )
+    );
+    hasSeededAchievementToastSettingsRef.current = true;
+  }, [getAchievementEarnedSettingKey, getUnlockedSupportedAchievements]);
+
+  const maybeShowNewAchievementToast = useCallback(async () => {
+    const unlockedAchievements = await getUnlockedSupportedAchievements();
+    const newlyUnlockedAchievements: EvaluatedAchievement[] = [];
+
+    for (const achievement of unlockedAchievements) {
+      const settingKey = getAchievementEarnedSettingKey(achievement.id);
+
+      if ((await getSettingValue(settingKey)) !== '1') {
+        newlyUnlockedAchievements.push(achievement);
+      }
+    }
+
+    if (newlyUnlockedAchievements.length === 0) {
+      return;
+    }
+
+    await Promise.all(
+      newlyUnlockedAchievements.map((achievement) =>
+        setSettingValue(getAchievementEarnedSettingKey(achievement.id), '1')
+      )
+    );
+    hasSeededAchievementToastSettingsRef.current = true;
+
+    const achievement = newlyUnlockedAchievements[0];
+
+    setAchievementToast({
+      body: achievement.description,
+      id: `${achievement.id}:${Date.now()}`,
+      title: achievement.title,
+    });
+  }, [getAchievementEarnedSettingKey, getUnlockedSupportedAchievements]);
+
   useFocusEffect(
     useCallback(() => {
       let isActive = true;
@@ -325,6 +395,15 @@ export default function TodayScreen() {
           setErrorMessage(null);
           await loadTodayData(selectedDateRef.current);
           hasLoadedTodayDataRef.current = true;
+          if (hasSeededAchievementToastSettingsRef.current) {
+            void maybeShowNewAchievementToast().catch((achievementError) => {
+              console.error('Failed to check achievement unlocks on Today focus', achievementError);
+            });
+          } else {
+            void seedUnlockedAchievementsAsSeen().catch((achievementError) => {
+              console.error('Failed to seed achievement unlock state', achievementError);
+            });
+          }
 
           if (isActive && !shouldShowInitialLoading) {
             restoreTodayScrollPosition(scrollYBeforeRefresh);
@@ -347,7 +426,12 @@ export default function TodayScreen() {
       return () => {
         isActive = false;
       };
-    }, [loadTodayData, restoreTodayScrollPosition])
+    }, [
+      loadTodayData,
+      maybeShowNewAchievementToast,
+      restoreTodayScrollPosition,
+      seedUnlockedAchievementsAsSeen,
+    ])
   );
 
   const completedHabitIds = useMemo(
@@ -531,6 +615,18 @@ export default function TodayScreen() {
   }, [crownToast]);
 
   useEffect(() => {
+    if (!achievementToast) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setAchievementToast(null);
+    }, 2800);
+
+    return () => clearTimeout(timeoutId);
+  }, [achievementToast]);
+
+  useEffect(() => {
     const subscription = DeviceEventEmitter.addListener(TODAY_TAB_RESELECT_EVENT, () => {
       const today = getTodayDateString();
 
@@ -581,6 +677,7 @@ export default function TodayScreen() {
   async function refreshSelectedDateStatuses(options?: {
     crownToastHabit?: Habit;
     previousCrownMilestone?: HabitCrownMilestone;
+    checkAchievements?: boolean;
   }) {
     const weekStart = getWeekStartDateString(selectedDate);
     const weekEnd = format(addDays(parseISO(weekStart), 6), 'yyyy-MM-dd');
@@ -611,6 +708,10 @@ export default function TodayScreen() {
         options.previousCrownMilestone,
         nextCrownByHabitId[options.crownToastHabit.id] ?? getHabitCrownMilestone(0)
       );
+    }
+
+    if (options?.checkAchievements) {
+      await maybeShowNewAchievementToast();
     }
   }
 
@@ -674,7 +775,9 @@ export default function TodayScreen() {
       }
 
       void refreshSelectedDateStatuses(
-        habit && !wasCompleted ? { crownToastHabit: habit, previousCrownMilestone } : undefined
+        habit && !wasCompleted
+          ? { checkAchievements: true, crownToastHabit: habit, previousCrownMilestone }
+          : { checkAchievements: true }
       ).catch((error) => {
         console.error('Failed to silently refresh Today after checkbox update', error);
       });
@@ -754,7 +857,7 @@ export default function TodayScreen() {
       setErrorMessage(null);
       setBusyHabitIds((current) => ({ ...current, [skipTargetHabitId]: true }));
       await skipHabitForDate(skipTargetHabitId, selectedDate, trimmedReason);
-      await refreshSelectedDateStatuses();
+      await refreshSelectedDateStatuses({ checkAchievements: true });
       setSkipTargetHabitId(null);
       setSkipReason('');
       setSkipReasonError(null);
@@ -927,6 +1030,7 @@ export default function TodayScreen() {
       }
 
       void refreshSelectedDateStatuses({
+        checkAchievements: true,
         crownToastHabit: habit,
         previousCrownMilestone,
       }).catch((error) => {
@@ -989,6 +1093,7 @@ export default function TodayScreen() {
       setNumericClosePromptVisible(false);
       dismissProgressEditor();
       void refreshSelectedDateStatuses({
+        checkAchievements: true,
         crownToastHabit: habit,
         previousCrownMilestone,
       }).catch((error) => {
@@ -1067,6 +1172,7 @@ export default function TodayScreen() {
       setErrorMessage(null);
       await setNumericEntryForDate(habitId, selectedDate, nextValue);
       void refreshSelectedDateStatuses({
+        checkAchievements: true,
         crownToastHabit: habit,
         previousCrownMilestone,
       }).catch((error) => {
@@ -2061,6 +2167,11 @@ export default function TodayScreen() {
         topOffset={insets.top}
         toast={crownToast}
       />
+      <AchievementUnlockedToast
+        onDismiss={() => setAchievementToast(null)}
+        topOffset={insets.top + (crownToast ? 88 : 0)}
+        toast={achievementToast}
+      />
     </View>
   );
 }
@@ -2130,6 +2241,82 @@ function CrownMilestoneToast({
           <View style={styles.crownToastCopy}>
             <Text style={styles.crownToastTitle}>{toast.title}</Text>
             <Text style={styles.crownToastBody}>{toast.body}</Text>
+          </View>
+        </Pressable>
+      </Animated.View>
+    </Modal>
+  );
+}
+
+function AchievementUnlockedToast({
+  onDismiss,
+  topOffset,
+  toast,
+}: {
+  onDismiss: () => void;
+  topOffset: number;
+  toast: AchievementToastState | null;
+}) {
+  const visible = Boolean(toast);
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(-10)).current;
+
+  useEffect(() => {
+    if (!visible) {
+      opacity.setValue(0);
+      translateY.setValue(-10);
+      return;
+    }
+
+    Animated.parallel([
+      Animated.timing(opacity, {
+        duration: 180,
+        easing: EasingLikeOutCubic,
+        toValue: 1,
+        useNativeDriver: true,
+      }),
+      Animated.timing(translateY, {
+        duration: 180,
+        easing: EasingLikeOutCubic,
+        toValue: 0,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [opacity, translateY, visible]);
+
+  if (!toast) {
+    return null;
+  }
+
+  return (
+    <Modal animationType="none" transparent visible={visible}>
+      <Animated.View
+        pointerEvents="box-none"
+        style={[
+          styles.crownToastWrap,
+          {
+            opacity,
+            paddingTop: topOffset,
+            transform: [{ translateY }],
+          },
+        ]}>
+        <Pressable
+          accessibilityLabel="Dismiss achievement notification"
+          accessibilityRole="button"
+          onPress={onDismiss}
+          style={({ pressed }) => [
+            styles.crownToast,
+            styles.achievementToast,
+            pressed && styles.pressed,
+          ]}>
+          <View style={[styles.crownToastIcon, styles.achievementToastIcon]}>
+            <Text style={styles.achievementToastIconText}>★</Text>
+          </View>
+          <View style={styles.crownToastCopy}>
+            <Text style={styles.crownToastTitle}>Achievement unlocked</Text>
+            <Text style={styles.crownToastBody}>
+              {toast.title}: {toast.body}
+            </Text>
           </View>
         </Pressable>
       </Animated.View>
@@ -3520,6 +3707,8 @@ function ProgressRingButton({
   const clampedPercent = Math.max(0, Math.min(percent, 1));
   const dashOffset = circumference * (1 - clampedPercent);
   const complete = clampedPercent >= 1;
+  const labelWidth = diameter - strokeWidth * 4;
+  const minimumLabelScale = size === 'compact' ? 0.74 : 0.82;
 
   return (
     <Pressable
@@ -3573,6 +3762,7 @@ function ProgressRingButton({
         <Text
           numberOfLines={1}
           adjustsFontSizeToFit
+          minimumFontScale={minimumLabelScale}
           style={[
             size === 'large'
               ? styles.largeProgressCircleText
@@ -3582,6 +3772,7 @@ function ProgressRingButton({
                 ? styles.wideProgressCircleText
                 : styles.progressCircleText,
             styles.progressCircleCompactLabel,
+            { width: labelWidth },
           ]}>
           {centerLabel}
         </Text>
@@ -3595,15 +3786,17 @@ function ProgressRingButton({
         <Text
           numberOfLines={1}
           adjustsFontSizeToFit
-          style={
+          minimumFontScale={minimumLabelScale}
+          style={[
             size === 'large'
               ? styles.largeProgressCircleText
               : size === 'dashboard'
                 ? styles.dashboardProgressCircleText
               : size === 'wide'
                 ? styles.wideProgressCircleText
-                : styles.progressCircleText
-          }>
+                : styles.progressCircleText,
+            { width: labelWidth },
+          ]}>
           {Math.floor(clampedPercent * 100)}%
         </Text>
       )}
@@ -4775,6 +4968,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     lineHeight: 13,
     fontWeight: '900',
+    textAlign: 'center',
   },
   progressCircleCompactLabel: {
     maxWidth: '72%',
@@ -4795,6 +4989,7 @@ const styles = StyleSheet.create({
     fontSize: 23,
     lineHeight: 27,
     fontWeight: '900',
+    textAlign: 'center',
   },
   wideProgressCircleText: {
     position: 'absolute',
@@ -4802,6 +4997,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     lineHeight: 22,
     fontWeight: '900',
+    textAlign: 'center',
   },
   dashboardProgressCircleText: {
     position: 'absolute',
@@ -4809,6 +5005,7 @@ const styles = StyleSheet.create({
     fontSize: 17,
     lineHeight: 21,
     fontWeight: '900',
+    textAlign: 'center',
   },
   largeCheckControl: {
     width: 58,
@@ -5671,6 +5868,10 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 8,
   },
+  achievementToast: {
+    borderColor: colors.primary,
+    shadowColor: colors.primary,
+  },
   crownToastIcon: {
     width: 44,
     height: 44,
@@ -5679,6 +5880,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.pill,
     backgroundColor: colors.surfaceElevated,
+  },
+  achievementToastIcon: {
+    borderColor: colors.primary,
+  },
+  achievementToastIconText: {
+    color: colors.primary,
+    fontSize: 20,
+    lineHeight: 22,
+    fontWeight: '900',
   },
   crownToastCopy: {
     flex: 1,

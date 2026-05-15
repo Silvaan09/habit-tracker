@@ -256,7 +256,12 @@ function shouldRescheduleReminder(previousHabit: Habit, values: HabitFormValues)
     !previousHabit.reminderEnabled ||
     !previousHabit.notificationId ||
     previousHabit.name !== values.name ||
-    previousHabit.reminderTime !== values.reminderTime
+    previousHabit.reminderTime !== values.reminderTime ||
+    previousHabit.scheduleType !== values.scheduleType ||
+    previousHabit.scheduleWeekdays?.join(',') !== values.scheduleWeekdays?.join(',') ||
+    previousHabit.scheduleOnDays !== values.scheduleOnDays ||
+    previousHabit.scheduleOffDays !== values.scheduleOffDays ||
+    previousHabit.scheduleStartDate !== values.scheduleStartDate
   );
 }
 

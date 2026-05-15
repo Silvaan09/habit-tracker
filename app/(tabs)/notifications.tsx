@@ -345,20 +345,14 @@ function getReminderScheduleSummary(habit: Habit) {
       return 'Specific days';
     }
 
-    return weekdays.map(getWeekdayLabel).join(', ');
+    return weekdays.map(day => getWeekdayLabel(day)[0]).join(',');
   }
 
   if (habit.scheduleType === 'cycle' || habit.scheduleType === 'interval') {
-    return `${formatDayCount(habit.scheduleOnDays ?? 1)} on, ${formatDayCount(
-      habit.scheduleOffDays ?? 0
-    )} off`;
+    return `${habit.scheduleOnDays ?? 1} on / ${habit.scheduleOffDays ?? 0} off`;
   }
 
   return 'Daily';
-}
-
-function formatDayCount(dayCount: number) {
-  return `${dayCount} ${dayCount === 1 ? 'day' : 'days'}`;
 }
 
 function getWeekdayLabel(weekday: number) {
