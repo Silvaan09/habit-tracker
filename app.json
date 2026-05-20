@@ -26,6 +26,7 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
+      "bundler": "metro",
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
@@ -47,6 +48,7 @@
       "expo-sqlite"
     ],
     "experiments": {
+      "baseUrl": "/habit-tracker",
       "typedRoutes": true,
       "reactCompiler": true
     },

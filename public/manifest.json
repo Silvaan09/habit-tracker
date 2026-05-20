@@ -1,0 +1,25 @@
+{
+  "short_name": "Habito",
+  "name": "Habito Habit Tracker",
+  "description": "A local-first habit tracker for daily routines, flexible goals, and quiet progress tracking.",
+  "icons": [
+    {
+      "src": "pwa-icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "pwa-icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/habit-tracker/",
+  "scope": "/habit-tracker/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#050505",
+  "background_color": "#050505"
+}
