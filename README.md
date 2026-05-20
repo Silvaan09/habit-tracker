@@ -1,35 +1,44 @@
 # Habito
 
-Habito is a local-first mobile habit tracker built with Expo, React Native, TypeScript, and SQLite. It is designed for flexible daily routines, quiet progress tracking, and a polished dark interface that keeps the focus on showing up.
+Habito is a local-first habit tracker packaged as a Progressive Web App. It is built for flexible routines, quick daily check-ins, and quiet progress tracking without requiring an account, backend, or cloud sync.
 
-The app supports simple checkbox habits, checklist-style habits with subtasks, and numeric goals such as pages read, minutes practiced, or water intake. Progress is stored on-device, works offline, and can be reviewed through Today cards, habit detail pages, stats, heatmaps, crowns, and achievements.
+The app supports simple checkbox habits, checklist-style habits with subtasks, and numeric goals such as pages read, minutes practiced, or glasses of water. Habit data is stored locally in the browser and can be exported by the user.
 
-## Highlights
+## Live App
 
-- Local SQLite storage with no required account or cloud sync
-- Flexible habit scheduling for daily, weekday, and cycle-based routines
-- Today dashboard with multiple card sizes and quick progress actions
+Habito is available at:
+
+https://silvaan09.github.io/habit-tracker/
+
+## Features
+
+- Local-first habit storage with no account required
+- Installable PWA with offline support
+- Today dashboard with compact, regular, and large habit cards
 - Checkbox, subtask, and numeric goal tracking
+- Daily, weekday, interval, and cycle-based schedules
 - Skips with reasons and local history
-- Habit detail pages with history, stats, and progress views
-- Activity stats, heatmaps, streaks, crowns, and achievements
-- Local reminder notifications
+- Habit detail pages with stats, history, heatmaps, and progress charts
+- Streaks, crowns, milestones, and achievements
+- Reminder settings for habits
 - Archived habit restore/delete management
 - Import, export, and reset tools for local data
-- Custom dark neon UI with Lucide habit icons
+- Polished dark interface with custom habit icons
 
 ## Tech Stack
 
-- Expo React Native
-- TypeScript
+- Expo
+- React Native Web
 - Expo Router
+- TypeScript
 - SQLite via `expo-sqlite`
-- Expo Notifications
-- PWA/static web export for GitHub Pages
+- PWA manifest and service worker
+- GitHub Pages
 - Lucide React Native
 - date-fns
+- Vitest
 
-## Getting Started
+## Local Development
 
 Install dependencies:
 
@@ -37,55 +46,39 @@ Install dependencies:
 npm install
 ```
 
-Start the Expo development server:
+Start the web development server:
 
 ```bash
-npx expo start
+npm run web
 ```
-
-Then open the app in Expo Go.
 
 Run project checks:
 
 ```bash
 npm run lint
 npx tsc --noEmit
+npm run test
 ```
 
-Build the PWA/static web version:
+Create a production build:
 
 ```bash
 npm run build:web
 ```
 
-The exported site is written to `dist/`. The web build is configured for GitHub Pages at `/habit-tracker`, with a web app manifest, service worker, install icons, `.nojekyll`, and a `404.html` fallback for client-side routes.
+## Data And Privacy
 
-Preview the exported site locally with the same base path GitHub Pages will use:
+Habito is designed to run locally. Habit data is stored in the user's browser storage through SQLite and stays on the device unless the user exports it manually.
 
-```bash
-npm run preview:pages
-```
+Because this is a browser-based PWA, clearing browser site data, using a different browser profile, or browser storage cleanup can remove local habit data. Use the export feature before switching devices, resetting the browser, or clearing site data.
 
-## GitHub Pages Deployment
+## Browser Notes
 
-This repo includes a GitHub Actions workflow at `.github/workflows/pages.yml`. To publish:
+Habito works best in modern Chromium, Safari, and Firefox browsers. PWA installation, offline behavior, local storage persistence, and notification behavior can vary by browser and operating system.
 
-1. Push the project to GitHub on `main` or `master`.
-2. In the GitHub repository, open **Settings > Pages**.
-3. Set **Build and deployment > Source** to **GitHub Actions**.
-4. Push a commit or run the **Deploy PWA to GitHub Pages** workflow manually.
+## Project Status
 
-If the repository name changes from `habit-tracker`, update the `/habit-tracker` base path in `app.json`, `app/+html.tsx`, and `public/manifest.json`.
-
-## Development Notes
-
-Habito is intentionally local-first. Habit data stays on the device/browser unless the user manually exports it.
-
-The app currently targets Expo Go for native development and Expo web/PWA for browser deployment. Notification behavior can vary between Expo Go, native development builds, and browsers, so EAS builds may still be useful for deeper native testing later.
-
-## Status
-
-This project is in active development. The core tracking, scheduling, stats, reminders, achievements, archive management, and local data tools are functional, with ongoing polish across interaction design and reliability.
+Habito is mostly complete and available as a GitHub Pages-hosted PWA. Future work is expected to focus on small polish, browser compatibility improvements, and maintenance.
 
 ## License
 
