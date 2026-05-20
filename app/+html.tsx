@@ -30,8 +30,15 @@ export default function Root({ children }: PropsWithChildren) {
           content="width=device-width, initial-scale=1, shrink-to-fit=no"
         />
         <meta name="theme-color" content="#050505" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-title" content="Habito" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <link rel="manifest" href={`${githubPagesBasePath}/manifest.json`} />
-        <link rel="apple-touch-icon" href={`${githubPagesBasePath}/pwa-icon-192.png`} />
+        <link
+          rel="apple-touch-icon"
+          sizes="180x180"
+          href={`${githubPagesBasePath}/apple-touch-icon.png`}
+        />
         <script dangerouslySetInnerHTML={{ __html: serviceWorkerScript }} />
         <ScrollViewStyleReset />
       </head>

@@ -1,5 +1,11 @@
 const CACHE_NAME = 'habito-pwa-v1';
-const APP_SHELL = ['./', './manifest.json', './pwa-icon-192.png', './pwa-icon-512.png'];
+const APP_SHELL = [
+  './',
+  './manifest.json',
+  './apple-touch-icon.png',
+  './pwa-icon-192.png',
+  './pwa-icon-512.png',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
